@@ -1,3 +1,5 @@
-export default function Page() {
-  return <main className="grid h-full place-items-center text-sm text-fg-muted">Alloway — coming soon</main>
+import { AllowayApp } from "@/components/alloway-app"
+
+export default function AllowayPage() {
+  return <AllowayApp />
 }
