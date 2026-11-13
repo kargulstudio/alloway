@@ -228,6 +228,28 @@ export function AllowayApp() {
     [current, edit]
   )
 
+  /** Tidy up: every block back to its auto-layout position (one undo step). */
+  const tidy = useCallback(() => {
+    const before = current()
+    if (!Object.keys(before.offsets).length) return
+    const after: Graph = { ...before, offsets: {} }
+    const label = "Tidy up"
+    edit(after, label)
+    toast("Layout tidied up", {
+      id: "tidy",
+      action: { label: "Undo", onClick: () => revert(after, before, label) },
+    })
+  }, [current, edit, revert])
+
+  const resetPosition = useCallback(
+    (id: string) => {
+      const block = current().blocks[id]
+      if (!block) return
+      edit((g) => moveBlock(g, id, { x: 0, y: 0 }), `Reset “${block.title}” position`)
+    },
+    [current, edit]
+  )
+
   const selected = selectedId ? (graph.blocks[selectedId] ?? null) : null
   const outcomes = useMemo(() => (selectedId ? outcomesFor(graph.blocks, selectedId) : []), [graph.blocks, selectedId])
   const blockCount = Object.keys(graph.blocks).length
@@ -301,6 +323,8 @@ export function AllowayApp() {
                 rootId={graph.rootId}
                 offsets={graph.offsets}
                 onMove={move}
+                onTidy={tidy}
+                onResetPosition={resetPosition}
                 selectedId={selectedId}
                 showSelection={showSelection}
                 onSelect={select}

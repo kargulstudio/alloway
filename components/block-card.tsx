@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useState } from "react"
-import { CopyIcon, EllipsisIcon, PencilLineIcon, Trash2Icon } from "lucide-react"
+import { CopyIcon, EllipsisIcon, LocateFixedIcon, PencilLineIcon, Trash2Icon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   DropdownMenu,
@@ -21,6 +21,9 @@ type BlockCardProps = {
   onRename: (title: string) => void
   onDuplicate: () => void
   onDelete: () => void
+  /** dragged away from its auto-layout position */
+  moved: boolean
+  onResetPosition: () => void
 }
 
 const TITLE = "text-[14px] leading-none font-medium tracking-[-0.28px] text-(--aw-ink-2)"
@@ -31,7 +34,16 @@ const TITLE = "text-[14px] leading-none font-medium tracking-[-0.28px] text-(--a
  * Double-click the title (or press F2 on a focused card) to rename it inline.
  * The card body (and the trigger's tab) is the drag handle — see WorkflowCanvas.
  */
-export function BlockCard({ block, selected, onSelect, onRename, onDuplicate, onDelete }: BlockCardProps) {
+export function BlockCard({
+  block,
+  selected,
+  onSelect,
+  onRename,
+  onDuplicate,
+  onDelete,
+  moved,
+  onResetPosition,
+}: BlockCardProps) {
   const isTrigger = block.kind === "trigger"
   const [editing, setEditing] = useState(false)
 
@@ -106,13 +118,15 @@ export function BlockCard({ block, selected, onSelect, onRename, onDuplicate, on
         onRename={() => setEditing(true)}
         onDuplicate={onDuplicate}
         onDelete={onDelete}
+        moved={moved}
+        onResetPosition={onResetPosition}
       />
     </div>
   )
 }
 
 /**
- * "…" on the card's top-right corner: Rename · Duplicate · Delete. Revealed on
+ * "…" on the card's top-right corner: Rename · Duplicate · Reset position · Delete. Revealed on
  * hover / focus / selection (and while open); always there for the selected
  * card on touch screens.
  */
@@ -122,12 +136,16 @@ function CardMenu({
   onRename,
   onDuplicate,
   onDelete,
+  moved,
+  onResetPosition,
 }: {
   block: Block
   top: number
   onRename: () => void
   onDuplicate: () => void
   onDelete: () => void
+  moved: boolean
+  onResetPosition: () => void
 }) {
   const renaming = useRef(false)
   const isTrigger = block.kind === "trigger"
@@ -171,6 +189,10 @@ function CardMenu({
           <CopyIcon className="text-(--aw-faint)" />
           {isTrigger ? "Duplicate (trigger is unique)" : branching ? "Duplicate (not for if/else)" : "Duplicate"}
           {!isTrigger && !branching ? <DropdownMenuShortcut>⌘D</DropdownMenuShortcut> : null}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onResetPosition} disabled={!moved}>
+          <LocateFixedIcon className="text-(--aw-faint)" />
+          {moved ? "Reset position" : "Reset position (not moved)"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={onDelete} disabled={isTrigger}>

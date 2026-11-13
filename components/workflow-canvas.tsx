@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
-import { MousePointerClickIcon } from "lucide-react"
+import { BroomSparklesIcon, MousePointerClickIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover"
@@ -163,6 +163,9 @@ type CanvasProps = {
   onDuplicate: (id: string) => void
   /** a drag (or keyboard nudge, `nudge`) moved a block to a new offset */
   onMove: (id: string, offset: Offset, nudge?: boolean) => void
+  /** clear every offset (Tidy up) / one block's offset */
+  onTidy: () => void
+  onResetPosition: (id: string) => void
   /** block that just appeared (plays the enter animation) */
   freshId: string | null
   /** bump `n` to pan a block into view */
@@ -182,6 +185,8 @@ export function WorkflowCanvas({
   onRename,
   onDuplicate,
   onMove,
+  onTidy,
+  onResetPosition,
   freshId,
   reveal,
 }: CanvasProps) {
@@ -783,6 +788,8 @@ export function WorkflowCanvas({
                 onRename={(title) => onRename(p.id, title)}
                 onDuplicate={() => onDuplicate(p.id)}
                 onDelete={() => onDelete(p.id)}
+                moved={p.id in offsets}
+                onResetPosition={() => onResetPosition(p.id)}
               />
               {/* "+" under the last block of a branch — revealed with its card */}
               {end ? <EndSlot top={tab + CARD_H} slot={end} onInsert={onInsert} /> : null}
@@ -817,6 +824,8 @@ export function WorkflowCanvas({
         onZoomOut={() => zoomBy(-1)}
         onReset={resetZoom}
         onFit={fitToView}
+        canTidy={Object.keys(offsets).length > 0}
+        onTidy={onTidy}
         outline={order.map((id) => blocks[id])}
         onJump={(id) => {
           onSelect(id)
@@ -980,12 +989,27 @@ type ToolbarProps = {
   onZoomOut: () => void
   onReset: () => void
   onFit: () => void
+  /** something has been moved off the auto layout */
+  canTidy: boolean
+  onTidy: () => void
   outline: Blocks[string][]
   onJump: (id: string) => void
 }
 
 /** Figma 1:5028 — floating 20px-radius bar, #FCFCFC, centred 24px above the bottom. */
-function CanvasToolbar({ zoom, tool, onTool, onZoomIn, onZoomOut, onReset, onFit, outline, onJump }: ToolbarProps) {
+function CanvasToolbar({
+  zoom,
+  tool,
+  onTool,
+  onZoomIn,
+  onZoomOut,
+  onReset,
+  onFit,
+  canTidy,
+  onTidy,
+  outline,
+  onJump,
+}: ToolbarProps) {
   const [outlineOpen, setOutlineOpen] = useState(false)
 
   return (
@@ -1076,6 +1100,13 @@ function CanvasToolbar({ zoom, tool, onTool, onZoomIn, onZoomOut, onReset, onFit
       <ToolButton label="Fit to screen" kbd="⇧1" onClick={onFit}>
         <Asset src={ASSETS.rows} w={14} h={14} />
       </ToolButton>
+      <ToolButton
+        label={canTidy ? "Tidy up" : "Tidy up (nothing moved)"}
+        onClick={onTidy}
+        disabled={!canTidy}
+      >
+        <BroomSparklesIcon className="size-[14px] text-(--aw-faint)" strokeWidth={1.6} />
+      </ToolButton>
     </div>
   )
 }
@@ -1096,9 +1127,10 @@ function ToolButton({
   return (
     <Tooltip>
       <TooltipTrigger
+        // the trigger's own `disabled` only turns the tooltip off: disable the button itself
+        render={<button type="button" disabled={disabled} />}
         aria-label={label}
         onClick={onClick}
-        disabled={disabled}
         data-tool=""
         className="aw-btn aw-hit flex size-[30px] shrink-0 items-center justify-center disabled:opacity-50"
       >
