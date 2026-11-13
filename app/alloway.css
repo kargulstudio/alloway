@@ -1,0 +1,269 @@
+/*
+ * Alloway — app tokens + recipes (Figma node 1:516).
+ * Tokens live on `.alloway` (and on :root only while an `.alloway` tree is
+ * mounted, so portalled popovers/tooltips can read them) — nothing leaks into
+ * other routes.
+ * Shared statsnap tokens (globals.css) are reused where values match:
+ *   --fg-muted (#757575), --ease-out, --duration-press, --duration-slow.
+ */
+
+.alloway,
+:root:has(.alloway) {
+  /* Colour */
+  --aw-ink: #121212; /* titles, active text, dark button */
+  --aw-ink-2: #1d1d1d; /* block titles, workflow name */
+  --aw-muted: var(--fg-muted); /* #757575 nav, chips, descriptions */
+  --aw-faint: #a1a1a1; /* placeholders, loading text, disabled */
+  --aw-label: #b8b8b8; /* mono section labels */
+  --aw-line: #ededed; /* chrome borders / control rings */
+  --aw-line-card: #ececec; /* block card ring + dividers */
+  --aw-canvas: #fafafa;
+  --aw-toolbar: #fcfcfc;
+  --aw-segment: #f5f5f5;
+  --aw-hover: #f7f7f7;
+  --aw-pressed: #f0f0f0;
+  --aw-chip: rgba(117, 117, 117, 0.08);
+  --aw-chip-hover: rgba(117, 117, 117, 0.14);
+  --aw-teal: #14b398;
+  --aw-teal-soft: #edfdfa;
+  --aw-danger: #f10000;
+  --aw-danger-soft: #fff1f1;
+
+  /* Elevation (exact Figma drop-shadows) */
+  --aw-ring: 0 0 0 1px var(--aw-line);
+  --aw-shadow-btn: 0px 1px 2px 0px rgba(0, 0, 0, 0.08), 0px 0px 0px 1px var(--aw-line);
+  --aw-shadow-tool: 0px 1px 2px 0px rgba(40, 40, 40, 0.08), 0px 0px 0px 1px var(--aw-line);
+  --aw-shadow-card: 0px 0px 0px 1px var(--aw-line-card);
+  --aw-shadow-card-hover: 0px 0px 0px 1px #dedede, 0px 2px 6px -2px rgba(9, 9, 11, 0.06);
+  --aw-shadow-card-selected: 0px 0px 0px 1px var(--aw-teal), 0px 0px 0px 4px rgba(20, 179, 152, 0.14);
+  --aw-shadow-toolbar: 0px 1px 4px 0px rgba(0, 0, 0, 0.02);
+  --aw-shadow-dark: 0px 0px 0px 1px var(--aw-ink), 0px 4px 4px -3px rgba(29, 166, 246, 0.4),
+    0px 2px 4px 0px rgba(29, 166, 246, 0.12), inset 0px -2px 3px 0px rgba(0, 0, 0, 0.08);
+  --aw-glow: inset 0px 1px 20px 0px rgba(255, 255, 255, 0.16);
+  --aw-focus: 0 0 0 2px #fff, 0 0 0 4px rgba(20, 179, 152, 0.45);
+
+  /* Type */
+  --aw-font-brand: "SF Pro Display", "SF Pro", -apple-system, BlinkMacSystemFont, var(--font-geist-sans), system-ui,
+    sans-serif;
+  --aw-font-mono: "SF Mono", ui-monospace, SFMono-Regular, var(--font-geist-mono), monospace;
+  --aw-font-inter: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* Layout */
+  --aw-sidebar: 240px;
+  --aw-sidebar-collapsed: 62px;
+  --aw-header: 62px;
+  --aw-inspector: 320px;
+}
+
+.alloway {
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "salt" 1;
+  color: var(--aw-ink);
+  background: #fff;
+}
+
+@layer components {
+  .alloway :focus-visible {
+    outline: none;
+    box-shadow: var(--aw-focus);
+  }
+
+  /* White control: 30px buttons, selector, inspector buttons. No bounce. */
+  .aw-btn {
+    background-color: #fff;
+    border-radius: 10px;
+    box-shadow: var(--aw-ring);
+    cursor: pointer;
+    transition-property: background-color, box-shadow, color, opacity;
+    transition-duration: var(--duration-press);
+    transition-timing-function: var(--ease-out);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .aw-btn[data-raised] {
+    box-shadow: var(--aw-shadow-btn);
+  }
+  .aw-btn[data-tool] {
+    box-shadow: var(--aw-shadow-tool);
+  }
+  .aw-btn:disabled {
+    cursor: default;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .aw-btn:not(:disabled):hover {
+      background-color: var(--aw-hover);
+    }
+  }
+  .aw-btn:not(:disabled):active,
+  .aw-btn[data-popup-open] {
+    background-color: var(--aw-pressed);
+  }
+  .aw-btn:focus-visible {
+    box-shadow: var(--aw-ring), var(--aw-focus);
+  }
+
+  /* Ghost row (sidebar nav, outline list) */
+  .aw-ghost {
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background-color var(--duration-press) var(--ease-out), color var(--duration-press) var(--ease-out);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .aw-ghost:hover {
+      background-color: var(--aw-chip);
+    }
+  }
+  .aw-ghost:active {
+    background-color: var(--aw-chip-hover);
+  }
+  .aw-ghost[data-active] {
+    background-color: var(--aw-chip);
+    color: var(--aw-ink);
+  }
+
+  /* Dark primary (Published) and the active canvas tool */
+  .aw-btn-dark {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    background-color: var(--aw-ink);
+    color: #fff;
+    border-radius: 10px;
+    box-shadow: var(--aw-shadow-dark);
+    cursor: pointer;
+    transition: background-color var(--duration-press) var(--ease-out), box-shadow var(--duration-press) var(--ease-out);
+  }
+  .aw-btn-dark::after {
+    /* 1px top-lit gradient stroke from the Figma export (white → 20%, at 20% opacity) */
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), inset 0 1px 0 0 rgba(255, 255, 255, 0.16);
+    pointer-events: none;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .aw-btn-dark:hover {
+      background-color: #222;
+    }
+  }
+  .aw-btn-dark:active,
+  .aw-btn-dark[data-popup-open] {
+    background-color: #000;
+  }
+  .aw-btn-dark:focus-visible {
+    box-shadow: var(--aw-shadow-dark), var(--aw-focus);
+  }
+
+  /* Coloured icon tile (block icons, workflow icon, team icons) */
+  .aw-tile {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    overflow: hidden;
+    border: 1px solid #fff;
+    background-color: var(--aw-tone, var(--aw-teal));
+    box-shadow: 0px 2px 4px 0px rgba(9, 9, 11, 0.16), 0px 1px 2px 0px rgba(9, 9, 11, 0.08),
+      0px 0px 0px 1px var(--aw-tone, var(--aw-teal)), var(--aw-glow);
+  }
+  .aw-tile[data-size="xs"] {
+    border-width: 0.5px;
+    box-shadow: 0px 1px 2px 0px rgba(9, 9, 11, 0.08), 0px 0px 0px 0.5px var(--aw-tone, var(--aw-teal)), var(--aw-glow);
+  }
+  .aw-tile[data-size="xxs"] {
+    border-width: 0.7px;
+    box-shadow: 0px 1.4px 2.8px 0px rgba(9, 9, 11, 0.16), 0px 0.7px 1.4px 0px rgba(9, 9, 11, 0.08),
+      0px 0px 0px 0.7px var(--aw-tone, var(--aw-teal)), inset 0px 0.7px 14px 0px rgba(255, 255, 255, 0.16);
+  }
+
+  /* Block card on the canvas */
+  .aw-card {
+    background: #fff;
+    box-shadow: var(--aw-shadow-card);
+    cursor: pointer;
+    transition: box-shadow var(--duration-fast) var(--ease-out);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .aw-card:hover {
+      box-shadow: var(--aw-shadow-card-hover);
+    }
+  }
+  .aw-card[data-selected] {
+    box-shadow: var(--aw-shadow-card-selected);
+  }
+  .aw-card:focus-visible {
+    box-shadow: var(--aw-shadow-card-selected);
+  }
+
+  /* Canvas nodes glide when the flow re-stacks after a delete / undo */
+  .aw-node {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transition: transform var(--duration-slow) var(--ease-out), opacity var(--duration-fast) var(--ease-out);
+  }
+  .aw-node[data-enter] {
+    animation: aw-node-in var(--duration-slow) var(--ease-out);
+  }
+
+  /* truncated text with line-height:1 — give descenders room without moving layout */
+  .aw-clip-safe {
+    padding-block: 3px;
+    margin-block: -3px;
+  }
+
+  .aw-spin {
+    animation: aw-spin 0.8s linear infinite;
+  }
+
+  .aw-fade-in {
+    animation: aw-fade-in var(--duration-slow) var(--ease-out);
+  }
+
+  .aw-input {
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: var(--aw-shadow-btn);
+    transition: box-shadow var(--duration-fast) var(--ease-out);
+  }
+  .aw-input:focus,
+  .aw-input:focus-visible {
+    outline: none;
+    box-shadow: 0px 1px 2px 0px rgba(0, 0, 0, 0.08), 0px 0px 0px 1px var(--aw-teal), 0px 0px 0px 4px rgba(20, 179, 152, 0.12);
+  }
+  .aw-input::placeholder {
+    color: var(--aw-faint);
+  }
+}
+
+@keyframes aw-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes aw-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+@keyframes aw-node-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alloway .aw-node,
+  .alloway .aw-card,
+  .alloway .aw-fade-in {
+    transition: none;
+    animation: none;
+  }
+  .alloway .aw-spin {
+    animation-duration: 2.4s;
+  }
+}
