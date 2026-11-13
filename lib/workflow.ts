@@ -22,7 +22,11 @@ export const BRANCH = { dy: 170, spread: 195, gutter: 110, barY: 129.67, tipY: 1
 export const EMPTY_SLOT = { w: 112, h: 30, top: 166 }
 
 export type Blocks = Record<string, Block>
-export type Graph = { blocks: Blocks; rootId: string | null }
+/** A block's user offset from its auto-layout position (canvas px). */
+export type Offset = { x: number; y: number }
+/** Only blocks the user has moved have an entry; the auto layout is the base. */
+export type Offsets = Record<string, Offset>
+export type Graph = { blocks: Blocks; rootId: string | null; offsets: Offsets }
 
 export type Side = "true" | "false"
 /** Where a new block goes: after a linear block, or at the top of an if/else branch. */
@@ -30,10 +34,12 @@ export type InsertTarget = { kind: "after"; id: string } | { kind: "branch"; id:
 
 export type PlacedBlock = { id: string; x: number; y: number }
 export type PlacedEdge =
-  | { kind: "connector"; key: string; x: number; y: number }
+  | { kind: "connector"; key: string; x: number; y: number; from: string; to: string }
   | {
       kind: "branch"
       key: string
+      from: string
+      children: { true: string | null; false: string | null }
       /** card origin of the if/else block */
       x: number
       y: number
@@ -113,7 +119,7 @@ export function layoutWorkflow(blocks: Blocks, rootId: string | null): Layout {
 
     if (b.branches) {
       const d = spreadOf(id, new Set())
-      edges.push({ kind: "branch", key: `${id}-branch`, x, y, spread: d })
+      edges.push({ kind: "branch", key: `${id}-branch`, x, y, spread: d, from: id, children: { ...b.branches } })
       for (const side of ["true", "false"] as const) {
         const dir = side === "true" ? -1 : 1
         const child = b.branches[side]
@@ -127,7 +133,7 @@ export function layoutWorkflow(blocks: Blocks, rootId: string | null): Layout {
         }
       }
     } else if (b.next) {
-      edges.push({ kind: "connector", key: `${id}-next`, x: x + 133, y: y + step.connector })
+      edges.push({ kind: "connector", key: `${id}-next`, x: x + 133, y: y + step.connector, from: id, to: b.next })
       slots.push({ key: `${id}-next`, x: cx, y: y + step.connector + 30, target: { kind: "after", id }, variant: "connector", from: id })
       place(b.next, x, y + step.next)
     } else {
@@ -290,7 +296,7 @@ export function changeBlockType(
   }
 
   blocks = { ...blocks, [id]: next }
-  return { graph: { ...graph, blocks }, removed }
+  return { graph: { ...graph, blocks, offsets: dropOffsets(graph.offsets, removed) }, removed }
 }
 
 /** Copy a linear block and place the copy right after the original. */
@@ -323,7 +329,7 @@ export function outcomesFor(blocks: Blocks, id: string): Outcome[] {
   return [{ label: "Completed", target: b.next ? (blocks[b.next]?.title ?? null) : null, insert: { kind: "after", id } }]
 }
 
-export function boundsOf(layout: Layout) {
+export function boundsOf(layout: Pick<Layout, "blocks" | "slots">) {
   if (!layout.blocks.length) return null
   let minX = Infinity
   let minY = Infinity
@@ -343,4 +349,208 @@ export function boundsOf(layout: Layout) {
     maxY = Math.max(maxY, s.y + EMPTY_SLOT.h / 2)
   }
   return { minX, minY, maxX, maxY }
+}
+
+/* ----------------------------------------------------------------- offsets */
+
+/** Canvas dot-grid spacing: drags snap to it and Alt + arrows nudge by it. */
+export const GRID = 18
+
+const ZERO: Offset = { x: 0, y: 0 }
+export const offsetOf = (offsets: Offsets, id: string | null | undefined): Offset => (id && offsets[id]) || ZERO
+export const sameOffset = (a: Offset, b: Offset) => a.x === b.x && a.y === b.y
+
+/** Offsets with `id` set to `offset` (a zero offset removes the entry). */
+export function withOffset(offsets: Offsets, id: string, offset: Offset): Offsets {
+  const rest = { ...offsets }
+  delete rest[id]
+  return offset.x === 0 && offset.y === 0 ? rest : { ...rest, [id]: { x: offset.x, y: offset.y } }
+}
+
+/** Forget the offsets of removed blocks (same object when none of them had one). */
+export function dropOffsets(offsets: Offsets, ids: string[]): Offsets {
+  if (!ids.some((id) => id in offsets)) return offsets
+  const rest = { ...offsets }
+  for (const id of ids) delete rest[id]
+  return rest
+}
+
+export function moveBlock(graph: Graph, id: string, offset: Offset): Graph {
+  if (!graph.blocks[id] || sameOffset(offsetOf(graph.offsets, id), offset)) return graph
+  return { ...graph, offsets: withOffset(graph.offsets, id, offset) }
+}
+
+/* ----------------------------------------------------------------- routing */
+
+export type Pt = { x: number; y: number }
+type Rect = { left: number; right: number; top: number; bottom: number }
+
+/**
+ * A connector drawn to a block that no longer sits where the auto layout put
+ * it: orthogonal path(s) from the source's bottom port to each target's top port.
+ */
+export type RoutedEdge = {
+  kind: "routed"
+  key: string
+  from: string
+  /** source port (centre of the handle dot) */
+  port: Pt
+  /** SVG path data, arrowhead included */
+  paths: string[]
+  labels: { text: string; x: number; y: number }[]
+}
+/** Resting edges keep the Figma artwork (shifted with their block); moved ones are routed. */
+export type ArrangedEdge = PlacedEdge | RoutedEdge
+export type Arranged = { blocks: PlacedBlock[]; edges: ArrangedEdge[]; slots: PlacedSlot[] }
+
+/** Handle dot radius; the arrow tip stops this far above the target card (Figma: 7.5px). */
+const PORT_R = 7
+const TIP_GAP = 7.5
+/** Corner radius, shortest run out of a port / into a tip, clearance of a lane beside the cards. */
+export const ROUTE = { radius: 8, run: 16, lane: 24 }
+
+type Route = { points: Pt[]; /** midpoint of the bend (or of a straight line) */ mid: Pt; /** middle of the last drop */ drop: Pt }
+
+const overlapX = (a: Rect, b: Rect) => a.left < b.right && b.left < a.right
+
+/**
+ * Orthogonal route from a bottom port `s` down into a top port `t`.
+ * Below: down, across at `level` (default: halfway), down. Straight when aligned.
+ * Above / too close: down out of the source, along a lane between or beside
+ * the two cards, over the target and down into it, so it never crosses them.
+ */
+export function orthoRoute(s: Pt, t: Pt, src: Rect, dst: Rect | null, level?: number): Route {
+  const { run } = ROUTE
+  const dx = t.x - s.x
+  if (Math.abs(dx) < 0.5 && t.y >= s.y) {
+    const mid = { x: s.x, y: (s.y + t.y) / 2 }
+    return { points: [s, { x: s.x, y: t.y }], mid, drop: mid }
+  }
+  if (t.y - s.y >= run * 2) {
+    const L = Math.min(t.y - run, Math.max(s.y + run, level ?? (s.y + t.y) / 2))
+    return {
+      points: [s, { x: s.x, y: L }, { x: t.x, y: L }, t],
+      mid: { x: (s.x + t.x) / 2, y: L },
+      drop: { x: t.x, y: (L + t.y) / 2 },
+    }
+  }
+  // around: out below the source, up a lane, in above the target
+  let y1 = s.y + run
+  if (dst && dst.top > s.y && overlapX(src, dst)) y1 = s.y + Math.min(run, (dst.top - s.y) / 2)
+  const y2 = t.y - run
+  let lane: number
+  if (dst && dst.left - src.right >= run * 2) lane = (src.right + dst.left) / 2
+  else if (dst && src.left - dst.right >= run * 2) lane = (dst.right + src.left) / 2
+  else {
+    const left = Math.min(src.left, dst?.left ?? t.x) - ROUTE.lane
+    const right = Math.max(src.right, dst?.right ?? t.x) + ROUTE.lane
+    lane = Math.abs(s.x - left) + Math.abs(t.x - left) <= Math.abs(s.x - right) + Math.abs(t.x - right) ? left : right
+  }
+  return {
+    points: [s, { x: s.x, y: y1 }, { x: lane, y: y1 }, { x: lane, y: y2 }, { x: t.x, y: y2 }, t],
+    mid: { x: lane, y: (y1 + y2) / 2 },
+    drop: { x: t.x, y: (y2 + t.y) / 2 },
+  }
+}
+
+const r2 = (n: number) => Math.round(n * 100) / 100
+
+/** Polyline → path with rounded corners, plus the downward arrowhead at the end. */
+export function routePath(points: Pt[], radius = ROUTE.radius): string {
+  // drop zero-length and collinear points
+  const pts: Pt[] = []
+  for (const p of points) {
+    const last = pts.at(-1)
+    if (last && Math.abs(last.x - p.x) < 0.01 && Math.abs(last.y - p.y) < 0.01) continue
+    const prev = pts.at(-2)
+    if (prev && last && ((prev.x === last.x && last.x === p.x) || (prev.y === last.y && last.y === p.y))) pts.pop()
+    pts.push(p)
+  }
+  const [first] = pts
+  let d = `M${r2(first.x)} ${r2(first.y)}`
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [a, c, b] = [pts[i - 1], pts[i], pts[i + 1]]
+    const inLen = Math.hypot(c.x - a.x, c.y - a.y)
+    const outLen = Math.hypot(b.x - c.x, b.y - c.y)
+    const r = Math.min(radius, inLen / 2, outLen / 2)
+    const p1 = { x: c.x + ((a.x - c.x) / inLen) * r, y: c.y + ((a.y - c.y) / inLen) * r }
+    const p2 = { x: c.x + ((b.x - c.x) / outLen) * r, y: c.y + ((b.y - c.y) / outLen) * r }
+    d += `L${r2(p1.x)} ${r2(p1.y)}Q${r2(c.x)} ${r2(c.y)} ${r2(p2.x)} ${r2(p2.y)}`
+  }
+  const t = pts.at(-1)!
+  const k = 3.18
+  return `${d}L${r2(t.x)} ${r2(t.y)}M${r2(t.x - k)} ${r2(t.y - k)}L${r2(t.x)} ${r2(t.y)}L${r2(t.x + k)} ${r2(t.y - k)}`
+}
+
+function cardRect(blocks: Blocks, id: string, p: Pt): Rect {
+  const tab = blocks[id]?.kind === "trigger" ? TRIGGER_TAB_H : 0
+  return { left: p.x, right: p.x + CARD_W, top: p.y - tab, bottom: p.y + CARD_H }
+}
+
+/**
+ * Apply user offsets to the auto layout. Blocks move by their own offset; an
+ * edge whose ends moved together keeps its Figma artwork (so with no offsets
+ * this is exactly the auto layout), otherwise it's routed to the new position
+ * and its "+" / branch labels sit on the route.
+ */
+export function arrange(layout: Layout, blocks: Blocks, offsets: Offsets): Arranged {
+  const pos = new Map<string, Pt>()
+  const placed = layout.blocks.map((p) => {
+    const o = offsetOf(offsets, p.id)
+    const q = { id: p.id, x: p.x + o.x, y: p.y + o.y }
+    pos.set(p.id, q)
+    return q
+  })
+  const routes = new Map<string, Route>()
+  const edges: ArrangedEdge[] = layout.edges.map((edge) => {
+    const so = offsetOf(offsets, edge.from)
+    const s = pos.get(edge.from)
+    const shifted = { ...edge, x: edge.x + so.x, y: edge.y + so.y }
+    if (!s) return shifted
+    const src = cardRect(blocks, edge.from, s)
+
+    if (edge.kind === "connector") {
+      const t = pos.get(edge.to)
+      if (!t || sameOffset(so, offsetOf(offsets, edge.to))) return shifted
+      const port = { x: s.x + CARD_W / 2, y: shifted.y + PORT_R }
+      const route = orthoRoute(port, { x: t.x + CARD_W / 2, y: t.y - TIP_GAP }, src, cardRect(blocks, edge.to, t))
+      routes.set(edge.key, route)
+      return { kind: "routed", key: edge.key, from: edge.from, port, paths: [routePath(route.points)], labels: [] }
+    }
+
+    const sides = ["true", "false"] as const
+    const aligned = sides.every((side) => {
+      const child = edge.children[side]
+      return !child || !pos.has(child) || sameOffset(so, offsetOf(offsets, child))
+    })
+    if (aligned) return shifted
+    const cx = s.x + CARD_W / 2
+    const port = { x: cx, y: s.y + CARD_H }
+    const paths: string[] = []
+    const labels: RoutedEdge["labels"] = []
+    for (const side of sides) {
+      const dir = side === "true" ? -1 : 1
+      const child = edge.children[side]
+      const t = child ? pos.get(child) : undefined
+      // empty branch: the drop to its "Add step" pill, which stays with the if/else
+      const tip = t
+        ? { x: t.x + CARD_W / 2 + dir * BRANCH.arrowOut, y: t.y - TIP_GAP }
+        : { x: cx + dir * (edge.spread + BRANCH.arrowOut), y: s.y + BRANCH.tipY }
+      const route = orthoRoute(port, tip, src, t && child ? cardRect(blocks, child, t) : null, s.y + BRANCH.barY)
+      routes.set(`${edge.from}-${side}`, route)
+      paths.push(routePath(route.points))
+      labels.push({ text: side === "true" ? "Is true" : "Is false", ...route.mid })
+    }
+    return { kind: "routed", key: edge.key, from: edge.from, port, paths, labels }
+  })
+
+  const slots = layout.slots.map((slot) => {
+    const route = routes.get(slot.key)
+    if (route && slot.variant === "connector") return { ...slot, ...route.mid }
+    if (route && slot.variant === "branch") return { ...slot, ...route.drop }
+    const o = offsetOf(offsets, slot.from)
+    return { ...slot, x: slot.x + o.x, y: slot.y + o.y }
+  })
+
+  return { blocks: placed, edges, slots }
 }

@@ -36,6 +36,8 @@
   --aw-shadow-card: 0px 0px 0px 1px var(--aw-line-card);
   --aw-shadow-card-hover: 0px 0px 0px 1px #dedede, 0px 2px 6px -2px rgba(9, 9, 11, 0.06);
   --aw-shadow-card-selected: 0px 0px 0px 1px var(--aw-teal), 0px 0px 0px 4px rgba(20, 179, 152, 0.14);
+  /* a card picked up for dragging */
+  --aw-shadow-lift: 0px 14px 28px -10px rgba(9, 9, 11, 0.18), 0px 4px 10px -4px rgba(9, 9, 11, 0.08);
   --aw-shadow-toolbar: 0px 1px 4px 0px rgba(0, 0, 0, 0.02);
   --aw-shadow-dark: 0px 0px 0px 1px var(--aw-ink), 0px 4px 4px -3px rgba(29, 166, 246, 0.4),
     0px 2px 4px 0px rgba(29, 166, 246, 0.12), inset 0px -2px 3px 0px rgba(0, 0, 0, 0.08);
@@ -185,8 +187,13 @@
   .aw-card {
     background: #fff;
     box-shadow: var(--aw-shadow-card);
-    cursor: pointer;
+    cursor: grab;
     transition: box-shadow var(--duration-fast) var(--ease-out);
+    -webkit-touch-callout: none;
+  }
+  .aw-drag {
+    cursor: grab;
+    -webkit-touch-callout: none;
   }
   @media (hover: hover) and (pointer: fine) {
     .aw-card:hover {
@@ -209,6 +216,34 @@
   }
   .aw-node[data-enter] {
     animation: aw-node-in var(--duration-slow) var(--ease-out);
+  }
+  /* while a block is dragged or gliding, positions follow the pointer / tween frame by frame */
+  .aw-world[data-moving] .aw-node {
+    transition: none;
+  }
+
+  /* A dragged card lifts: on top, slightly larger, with a soft drop shadow */
+  .aw-lift {
+    transition: transform var(--duration-fast) var(--ease-out);
+  }
+  .aw-node[data-dragging] {
+    z-index: 30;
+  }
+  .aw-node[data-dragging] .aw-lift {
+    transform: scale(1.02);
+  }
+  .aw-node[data-dragging][data-touch] .aw-lift {
+    animation: aw-lift-pop var(--duration-slow) var(--ease-out);
+  }
+  .aw-node[data-dragging] .aw-card {
+    box-shadow: var(--aw-shadow-card-hover), var(--aw-shadow-lift);
+  }
+  .aw-node[data-dragging] .aw-card[data-selected] {
+    box-shadow: var(--aw-shadow-card-selected), var(--aw-shadow-lift);
+  }
+  [data-grabbing],
+  [data-grabbing] * {
+    cursor: grabbing !important;
   }
 
   /*
@@ -374,6 +409,19 @@
   }
 }
 
+/* touch long-press: a quick swell tells the finger the card is picked up */
+@keyframes aw-lift-pop {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.045);
+  }
+  100% {
+    transform: scale(1.02);
+  }
+}
+
 @keyframes aw-node-in {
   from {
     opacity: 0;
@@ -383,6 +431,7 @@
 @media (prefers-reduced-motion: reduce) {
   .alloway .aw-node,
   .alloway .aw-card,
+  .alloway .aw-lift,
   .alloway .aw-slot-dot,
   .alloway .aw-end-stub,
   .alloway .aw-card-menu,

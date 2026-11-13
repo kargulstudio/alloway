@@ -7,18 +7,24 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover"
 import { ASSETS, TONE_COLOR, type BlockTemplate } from "@/lib/data"
 import {
+  arrange,
   boundsOf,
   BRANCH,
   CANVAS_FRAME,
   CARD_H,
   CARD_W,
+  GRID,
   layoutWorkflow,
+  offsetOf,
   orderedIds,
+  sameOffset,
   TRIGGER_TAB_H,
+  type Arranged,
+  type ArrangedEdge,
   type Blocks,
   type InsertTarget,
-  type Layout,
-  type PlacedEdge,
+  type Offset,
+  type Offsets,
   type PlacedSlot,
 } from "@/lib/workflow"
 import { BREAKPOINTS } from "@/lib/use-media-query"
@@ -49,7 +55,7 @@ function measure(el: HTMLElement | null) {
  * Zoom (≤100%) and offset that fit the whole workflow in a w×h canvas,
  * clear of the floating toolbar. Phones get tighter padding.
  */
-function fitView(layout: Layout, w: number, h: number): Viewport | null {
+function fitView(layout: Pick<Arranged, "blocks" | "slots">, w: number, h: number): Viewport | null {
   const b = boundsOf(layout)
   if (!b) return null
   const compact = w < 640
@@ -69,9 +75,85 @@ function fitView(layout: Layout, w: number, h: number): Viewport | null {
 const isTyping = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))
 
+/* ------------------------------------------------------------ block moves */
+
+/** Mouse: a press turns into a drag past 3px. Touch: hold still this long, then drag. */
+const DRAG_THRESHOLD = 3
+const LONG_PRESS_MS = 300
+const ARROWS: Record<string, [number, number]> = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+}
+
+/** A block being dragged: its live offset is shown instead of the committed one. */
+type Preview = { id: string; x: number; y: number; touch: boolean }
+/** Glide between two sets of offsets (Tidy up, undo/redo of a move, a cancelled drag). */
+type Tween = { from: Offsets; to: Offsets; ms: number }
+
+const easeOut = (t: number) => 1 - Math.pow(1 - t, 3)
+const withPreview = (o: Offsets, p: Preview | null): Offsets => (p ? { ...o, [p.id]: { x: p.x, y: p.y } } : o)
+const idsOf = (a: Offsets, b: Offsets) => new Set([...Object.keys(a), ...Object.keys(b)])
+
+function lerpOffsets({ from, to }: Tween, t: number): Offsets {
+  const k = easeOut(t)
+  const out: Offsets = {}
+  for (const id of idsOf(from, to)) {
+    const a = offsetOf(from, id)
+    const b = offsetOf(to, id)
+    out[id] = { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k }
+  }
+  return out
+}
+
+/** Longest distance any block travels, for a duration that suits both a nudge and a Tidy up. */
+function tweenFor(from: Offsets, to: Offsets): Tween | null {
+  let dist = 0
+  for (const id of idsOf(from, to)) {
+    const a = offsetOf(from, id)
+    const b = offsetOf(to, id)
+    dist = Math.max(dist, Math.hypot(b.x - a.x, b.y - a.y))
+  }
+  if (dist < 0.5) return null
+  if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return null
+  return { from, to, ms: Math.min(380, 140 + dist * 0.5) }
+}
+
+/** The pointer that pressed a block: pending (below threshold / long press) or dragging. */
+type Move = {
+  pointer: number
+  id: string
+  touch: boolean
+  active: boolean
+  /** client position at press (drag threshold) */
+  sx: number
+  sy: number
+  /** pointer at press in canvas coordinates, so a pan or zoom mid-drag keeps the block under it */
+  wx: number
+  wy: number
+  /** committed offset at press, and the offset on screen now */
+  start: Offset
+  cur: Offset
+  last: { x: number; y: number; alt: boolean }
+  frame: number
+}
+
+/** Swallow the click the browser may fire after a drag, so it doesn't re-select / deselect. */
+function swallowNextClick() {
+  const swallow = (e: MouseEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+  }
+  window.addEventListener("click", swallow, { capture: true, once: true })
+  setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0)
+}
+
 type CanvasProps = {
   blocks: Blocks
   rootId: string | null
+  /** user offsets from the auto layout, keyed by block id */
+  offsets: Offsets
   selectedId: string | null
   showSelection: boolean
   onSelect: (id: string | null) => void
@@ -79,6 +161,8 @@ type CanvasProps = {
   onInsert: (target: InsertTarget, template: BlockTemplate) => void
   onRename: (id: string, title: string) => void
   onDuplicate: (id: string) => void
+  /** a drag (or keyboard nudge, `nudge`) moved a block to a new offset */
+  onMove: (id: string, offset: Offset, nudge?: boolean) => void
   /** block that just appeared (plays the enter animation) */
   freshId: string | null
   /** bump `n` to pan a block into view */
@@ -89,6 +173,7 @@ type CanvasProps = {
 export function WorkflowCanvas({
   blocks,
   rootId,
+  offsets,
   selectedId,
   showSelection,
   onSelect,
@@ -96,6 +181,7 @@ export function WorkflowCanvas({
   onInsert,
   onRename,
   onDuplicate,
+  onMove,
   freshId,
   reveal,
 }: CanvasProps) {
@@ -121,15 +207,61 @@ export function WorkflowCanvas({
   const [panning, setPanning] = useState(false)
   const gridId = useId()
 
-  const layout = useMemo(() => layoutWorkflow(blocks, rootId), [blocks, rootId])
-  const layoutRef = useRef(layout)
+  /* --- block positions: committed offsets, a live drag preview, or a glide between them */
+  const move = useRef<Move | null>(null)
+  const pressTimer = useRef<number | null>(null)
+  const [preview, setPreview] = useState<Preview | null>(null)
+  const [tween, setTween] = useState<Tween | null>(null)
+  const [tweenT, setTweenT] = useState(0)
+  const [seen, setSeen] = useState({ offsets, blocks })
+  if (offsets !== seen.offsets || blocks !== seen.blocks) {
+    // Offsets changed (drop, nudge, Tidy up, undo/redo): glide from what's on screen.
+    // A structural edit restacks with the nodes' own CSS transition instead.
+    const shownBefore = withPreview(tween ? lerpOffsets(tween, tweenT) : seen.offsets, preview)
+    const next = blocks === seen.blocks && offsets !== seen.offsets ? tweenFor(shownBefore, offsets) : null
+    setSeen({ offsets, blocks })
+    if (offsets !== seen.offsets) setPreview(null)
+    setTween(next)
+    setTweenT(0)
+  }
+  const shown = useMemo(
+    () => withPreview(tween ? lerpOffsets(tween, tweenT) : offsets, preview),
+    [tween, tweenT, offsets, preview]
+  )
+  const moving = preview !== null || tween !== null
+
+  /* advance a glide one frame at a time */
   useEffect(() => {
-    layoutRef.current = layout
-  }, [layout])
+    if (!tween) return
+    const start = performance.now()
+    let frame = requestAnimationFrame(function step(now) {
+      const t = Math.min(1, (now - start) / tween.ms)
+      if (t >= 1) {
+        setTween((cur) => (cur === tween ? null : cur))
+        return
+      }
+      setTweenT(t)
+      frame = requestAnimationFrame(step)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [tween])
+
+  const layout = useMemo(() => layoutWorkflow(blocks, rootId), [blocks, rootId])
+  /** on screen (drag preview / glide) vs. at rest (bounds, fit, reveal) */
+  const arranged = useMemo(() => arrange(layout, blocks, shown), [layout, blocks, shown])
+  const resting = useMemo(() => arrange(layout, blocks, offsets), [layout, blocks, offsets])
+  const restingRef = useRef(resting)
+  const offsetsRef = useRef(offsets)
+  const viewRef = useRef(view)
+  useEffect(() => {
+    restingRef.current = resting
+    offsetsRef.current = offsets
+    viewRef.current = view
+  }, [resting, offsets, view])
   const order = useMemo(() => orderedIds(blocks, rootId), [blocks, rootId])
   const endSlots = useMemo(
-    () => new Map(layout.slots.filter((s) => s.variant === "end").map((s) => [s.from, s])),
-    [layout]
+    () => new Map(arranged.slots.filter((s) => s.variant === "end").map((s) => [s.from, s])),
+    [arranged]
   )
   const panMode = tool === "hand" || spaceHeld
 
@@ -144,7 +276,7 @@ export function WorkflowCanvas({
       if (centred.current) return
       centred.current = true
       const { width: w, height: h } = entry.contentRect
-      const fit = window.matchMedia(BREAKPOINTS.lg).matches ? null : fitView(layoutRef.current, w, h)
+      const fit = window.matchMedia(BREAKPOINTS.lg).matches ? null : fitView(restingRef.current, w, h)
       setView((v) => fit ?? { ...v, x: Math.round((w - CANVAS_FRAME.w) / 2) })
     })
     ro.observe(el)
@@ -188,25 +320,25 @@ export function WorkflowCanvas({
 
   const fitToView = useCallback(() => {
     const { w, h } = size()
-    const fit = fitView(layout, w, h)
+    const fit = fitView(resting, w, h)
     if (fit) setView(fit)
-  }, [layout, size])
+  }, [resting, size])
 
   const centreOn = useCallback(
     (id: string) => {
-      const p = layout.blocks.find((b) => b.id === id)
+      const p = resting.blocks.find((b) => b.id === id)
       if (!p) return
       const { w, h } = size()
       setView((v) => ({ ...v, x: w / 2 - (p.x + CARD_W / 2) * v.z, y: (h - 80) / 2 - (p.y + CARD_H / 2) * v.z }))
     },
-    [layout, size]
+    [resting, size]
   )
 
   /* Pan just enough to bring a new / jumped-to block fully into view. */
   useEffect(() => {
     if (!reveal) return
     const frame = requestAnimationFrame(() => {
-      const p = layoutRef.current.blocks.find((b) => b.id === reveal.id)
+      const p = restingRef.current.blocks.find((b) => b.id === reveal.id)
       if (!p) return
       const { w, h } = size()
       const pad = 48
@@ -228,7 +360,165 @@ export function WorkflowCanvas({
     return () => cancelAnimationFrame(frame)
   }, [reveal, size])
 
-  /* Keyboard: H / V tools, hold Space to pan, ⌘± / ⌘0 zoom, ⇧1 fit, ⌫ delete, ⌘D duplicate, Esc deselect. */
+  /* --------------------------------------------------------- moving blocks */
+
+  const local = (x: number, y: number) => {
+    const r = viewportRef.current?.getBoundingClientRect()
+    return { x: x - (r?.left ?? 0), y: y - (r?.top ?? 0) }
+  }
+  /** client point → canvas coordinates under the current pan / zoom */
+  const toWorld = useCallback((x: number, y: number) => {
+    const r = viewportRef.current?.getBoundingClientRect()
+    const v = viewRef.current
+    return { x: (x - (r?.left ?? 0) - v.x) / v.z, y: (y - (r?.top ?? 0) - v.y) / v.z }
+  }, [])
+
+  /** Where the pointer puts the block: grid-snapped, free with Alt / Option held. */
+  const offsetAt = useCallback(
+    (m: Move): Offset => {
+      const w = toWorld(m.last.x, m.last.y)
+      const x = m.start.x + w.x - m.wx
+      const y = m.start.y + w.y - m.wy
+      return m.last.alt
+        ? { x: Math.round(x), y: Math.round(y) }
+        : { x: Math.round(x / GRID) * GRID, y: Math.round(y / GRID) * GRID }
+    },
+    [toWorld]
+  )
+
+  /** One preview update per frame, however many pointer events arrive. */
+  const schedule = useCallback(
+    (m: Move) => {
+      if (m.frame) return
+      m.frame = requestAnimationFrame(() => {
+        m.frame = 0
+        if (move.current !== m || !m.active) return
+        const next = offsetAt(m)
+        if (sameOffset(next, m.cur)) return
+        m.cur = next
+        setPreview({ id: m.id, touch: m.touch, ...next })
+      })
+    },
+    [offsetAt]
+  )
+
+  const clearPress = () => {
+    if (pressTimer.current !== null) window.clearTimeout(pressTimer.current)
+    pressTimer.current = null
+  }
+
+  /** The press became a drag: capture the pointer, lift the card, select it (docked inspector only). */
+  const activate = useCallback(
+    (m: Move) => {
+      m.active = true
+      try {
+        viewportRef.current?.setPointerCapture(m.pointer)
+      } catch {
+        /* pointer already gone */
+      }
+      if (m.touch) navigator.vibrate?.(10)
+      // below lg selecting opens the inspector sheet over the canvas — a tap still does that
+      if (window.matchMedia(BREAKPOINTS.lg).matches) onSelect(m.id)
+      m.cur = m.touch ? m.start : offsetAt(m)
+      setPreview({ id: m.id, touch: m.touch, ...m.cur })
+    },
+    [offsetAt, onSelect]
+  )
+
+  /** Put a dragged block back where it was committed, gliding from where it is now. */
+  const settle = useCallback((m: Move) => {
+    const committed = offsetsRef.current
+    setPreview(null)
+    setTween(tweenFor({ ...committed, [m.id]: m.cur }, committed))
+    setTweenT(0)
+  }, [])
+
+  /** Escape / pointercancel: abandon the drag. */
+  const cancelMove = useCallback(() => {
+    const m = move.current
+    if (pressTimer.current !== null) window.clearTimeout(pressTimer.current)
+    pressTimer.current = null
+    if (!m) return
+    move.current = null
+    cancelAnimationFrame(m.frame)
+    if (m.active) settle(m)
+  }, [settle])
+
+  const drop = (m: Move, e: React.PointerEvent) => {
+    move.current = null
+    cancelAnimationFrame(m.frame)
+    m.last = { x: e.clientX, y: e.clientY, alt: e.altKey }
+    const next = offsetAt(m)
+    swallowNextClick()
+    if (sameOffset(next, offsetOf(offsetsRef.current, m.id))) {
+      settle(m)
+      return
+    }
+    // the preview stays until the new offsets arrive, so nothing jumps
+    setPreview({ id: m.id, touch: m.touch, ...next })
+    onMove(m.id, next)
+  }
+
+  const press = (e: React.PointerEvent, id: string, touch: boolean) => {
+    const w = toWorld(e.clientX, e.clientY)
+    const start = offsetOf(offsetsRef.current, id)
+    const m: Move = {
+      pointer: e.pointerId,
+      id,
+      touch,
+      active: false,
+      sx: e.clientX,
+      sy: e.clientY,
+      wx: w.x,
+      wy: w.y,
+      start,
+      cur: start,
+      last: { x: e.clientX, y: e.clientY, alt: e.altKey },
+      frame: 0,
+    }
+    move.current = m
+    if (!touch) return
+    clearPress()
+    pressTimer.current = window.setTimeout(() => {
+      pressTimer.current = null
+      // still the same finger, still holding still, no pinch: pick the block up
+      if (move.current !== m || drag.current?.moved || touches.current.size !== 1) return
+      drag.current = null
+      activate(m)
+    }, LONG_PRESS_MS)
+  }
+
+  /* Escape cancels a drag; Alt / Option toggles snapping without moving the pointer. */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const m = move.current
+      if (!m?.active) return
+      if (e.key === "Escape" && e.type === "keydown") {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        cancelMove()
+      } else if (e.key === "Alt") {
+        m.last = { ...m.last, alt: e.type === "keydown" }
+        schedule(m)
+      }
+    }
+    window.addEventListener("keydown", onKey, true)
+    window.addEventListener("keyup", onKey, true)
+    return () => {
+      window.removeEventListener("keydown", onKey, true)
+      window.removeEventListener("keyup", onKey, true)
+    }
+  }, [cancelMove, schedule])
+
+  useEffect(
+    () => () => {
+      if (pressTimer.current !== null) window.clearTimeout(pressTimer.current)
+    },
+    []
+  )
+
+  /* Keyboard: H / V tools, hold Space to pan, ⌘± / ⌘0 zoom, ⇧1 fit, ⌫ delete, ⌘D duplicate,
+     ⌥ arrows nudge a block (⇧⌥ by 4 grid steps), Esc deselect. */
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return
@@ -256,6 +546,16 @@ export function WorkflowCanvas({
         onDuplicate(selectedId)
       } else if (mod) {
         return
+      } else if (e.altKey && ARROWS[e.key]) {
+        // the focused card, else the selected one
+        const focused = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-drag]")?.dataset.drag : undefined
+        const id = focused ?? (showSelection ? selectedId : null)
+        if (!id || move.current?.active) return
+        e.preventDefault()
+        const step = GRID * (e.shiftKey ? 4 : 1)
+        const [dx, dy] = ARROWS[e.key]
+        const o = offsetOf(offsetsRef.current, id)
+        onMove(id, { x: o.x + dx * step, y: o.y + dy * step }, true)
       } else if (e.shiftKey && (e.key === "!" || e.code === "Digit1")) {
         fitToView()
       } else if (e.key === "h" || e.key === "H") {
@@ -281,26 +581,32 @@ export function WorkflowCanvas({
       window.removeEventListener("keyup", up)
       window.removeEventListener("blur", blur)
     }
-  }, [zoomBy, resetZoom, fitToView, selectedId, showSelection, onDelete, onSelect, onDuplicate])
+  }, [zoomBy, resetZoom, fitToView, selectedId, showSelection, onDelete, onSelect, onDuplicate, onMove])
 
   /*
-   * Mouse: drag empty canvas to pan (with the hand tool / Space, anything).
-   * Touch: one finger pans from anywhere (a tap still selects), two fingers pinch-zoom.
+   * Mouse: drag a card to move it (past 3px; a click still selects); drag empty
+   * canvas to pan (with the hand tool / Space, anything).
+   * Touch: one finger pans from anywhere (a tap still selects), press and hold a
+   * card to move it, two fingers pinch-zoom.
    */
-  const local = (x: number, y: number) => {
-    const r = viewportRef.current?.getBoundingClientRect()
-    return { x: x - (r?.left ?? 0), y: y - (r?.top ?? 0) }
-  }
-
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const target = e.target as Element
     // React bubbles events through portals: ignore menus/sheets rendered outside the canvas DOM
     if (!e.currentTarget.contains(target)) return
     if (target.closest("[data-canvas-ui]")) return
     const touch = e.pointerType === "touch"
+    // the card handle under the pointer — never the "…" menu, chip, "+" buttons or the rename field
+    const handle =
+      panMode || target.closest("input, [data-no-drag], [data-no-pan]")
+        ? null
+        : target.closest<HTMLElement>("[data-drag]")?.dataset.drag
     if (touch) {
+      if (move.current?.active) return // a card is being dragged: other fingers don't pinch
       touches.current.set(e.pointerId, local(e.clientX, e.clientY))
       if (touches.current.size === 2) {
+        // a second finger turns a pending long press into a pinch
+        clearPress()
+        move.current = null
         const [a, b] = [...touches.current.values()]
         pinch.current = {
           dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
@@ -315,6 +621,10 @@ export function WorkflowCanvas({
     } else {
       if (target.closest("[data-no-pan]")) return
       if (e.button !== 0 && e.button !== 1) return
+      if (e.button === 0 && handle) {
+        press(e, handle, false)
+        return
+      }
       if (e.button === 0 && !panMode && target.closest("[data-block]")) return
       e.currentTarget.setPointerCapture(e.pointerId)
     }
@@ -325,11 +635,25 @@ export function WorkflowCanvas({
       ox: view.x,
       oy: view.y,
       moved: false,
-      onEmpty: !target.closest("[data-block], [data-no-pan]"),
+      onEmpty: !target.closest("[data-block], [data-drag], [data-no-pan]"),
       touch,
     }
+    if (touch && handle) press(e, handle, true)
   }
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const m = move.current
+    if (m && m.pointer === e.pointerId) {
+      m.last = { x: e.clientX, y: e.clientY, alt: e.altKey }
+      if (m.active) {
+        schedule(m)
+        return
+      }
+      if (!m.touch) {
+        if (Math.hypot(e.clientX - m.sx, e.clientY - m.sy) >= DRAG_THRESHOLD) activate(m)
+        return
+      }
+      // touch before the long press fires: moving pans instead (below)
+    }
     if (touches.current.has(e.pointerId)) touches.current.set(e.pointerId, local(e.clientX, e.clientY))
     const p = pinch.current
     if (p && touches.current.size >= 2) {
@@ -351,12 +675,30 @@ export function WorkflowCanvas({
     if (!d.moved) {
       d.moved = true
       setPanning(true)
+      // moved before the long press: it's a pan, not a block drag
+      if (m && !m.active) {
+        clearPress()
+        move.current = null
+      }
       // touch captures only once it's a pan, so a tap still reaches the card / button
       if (d.touch) e.currentTarget.setPointerCapture(e.pointerId)
     }
     setView((v) => ({ ...v, x: d.ox + dx, y: d.oy + dy }))
   }
   const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const m = move.current
+    if (m && m.pointer === e.pointerId) {
+      if (m.active) {
+        touches.current.delete(e.pointerId)
+        drag.current = null
+        if (e.type === "pointercancel") cancelMove()
+        else drop(m, e)
+        return
+      }
+      // released before it became a drag: a plain click / tap (the card selects itself)
+      clearPress()
+      move.current = null
+    }
     touches.current.delete(e.pointerId)
     if (pinch.current) {
       if (touches.current.size < 2) {
@@ -381,6 +723,11 @@ export function WorkflowCanvas({
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
+      // a long press on a card would otherwise open the touch context menu
+      onContextMenu={(e) => {
+        if (move.current?.touch) e.preventDefault()
+      }}
+      data-grabbing={preview ? "" : undefined}
       className={cn(
         "relative min-w-0 flex-1 touch-none overflow-hidden bg-(--aw-canvas) select-none",
         panMode && (panning ? "cursor-grabbing" : "cursor-grab"),
@@ -392,8 +739,8 @@ export function WorkflowCanvas({
         <defs>
           <pattern
             id={gridId}
-            width={18}
-            height={18}
+            width={GRID}
+            height={GRID}
             patternUnits="userSpaceOnUse"
             patternTransform={`translate(${view.x} ${view.y}) scale(${view.z})`}
           >
@@ -405,21 +752,28 @@ export function WorkflowCanvas({
 
       {/* Transformable world layer */}
       <div
-        className={cn("absolute top-0 left-0 origin-top-left", panMode && "[&_[data-block]]:pointer-events-none [&_[data-no-pan]]:pointer-events-none")}
+        data-moving={moving ? "" : undefined}
+        className={cn(
+          "aw-world absolute top-0 left-0 origin-top-left",
+          panMode && "[&_[data-block]]:pointer-events-none [&_[data-drag]]:pointer-events-none [&_[data-no-pan]]:pointer-events-none"
+        )}
         style={{
           transform: `translate(${view.x}px, ${view.y}px) scale(${view.z})`,
           willChange: panning ? "transform" : undefined,
         }}
       >
-        {layout.blocks.map((p) => {
+        {arranged.blocks.map((p) => {
           const block = blocks[p.id]
           const tab = block.kind === "trigger" ? TRIGGER_TAB_H : 0
           const end = endSlots.get(p.id)
+          const dragging = preview?.id === p.id
           return (
             <div
               key={p.id}
               className="aw-node"
               data-enter={freshId === p.id || undefined}
+              data-dragging={dragging || undefined}
+              data-touch={(dragging && preview.touch) || undefined}
               style={{ transform: `translate(${p.x}px, ${p.y - tab}px)` }}
             >
               <BlockCard
@@ -436,15 +790,17 @@ export function WorkflowCanvas({
           )
         })}
         {/* connectors sit above the cards (Figma layer order): the handle overlaps the card edge */}
-        {layout.edges.map((edge) => (
-          <Edge key={edge.key} edge={edge} />
+        {arranged.edges.map((edge) => (
+          // a lifted card keeps its own port dot on top
+          <Edge key={edge.key} edge={edge} lifted={preview?.id === edge.from} />
         ))}
-        {layout.slots.map((slot) =>
+        {arranged.slots.map((slot) =>
           slot.variant === "end" ? null : <InsertSlot key={slot.key} slot={slot} onInsert={onInsert} />
         )}
       </div>
 
-      {layout.blocks.length === 0 ? (
+
+      {arranged.blocks.length === 0 ? (
         <div className="aw-fade-in pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1.5 pb-24 text-center">
           <p className="text-[14px] leading-none font-medium tracking-[-0.28px] text-(--aw-ink-2)">This workflow is empty</p>
           <p className="text-[14px] leading-none font-medium tracking-[-0.28px] text-(--aw-faint)">
@@ -471,13 +827,49 @@ export function WorkflowCanvas({
   )
 }
 
+
 /* ------------------------------------------------------------------- edges */
 
-function Edge({ edge }: { edge: PlacedEdge }) {
+function Edge({ edge, lifted }: { edge: ArrangedEdge; lifted: boolean }) {
+  const z = lifted ? 31 : undefined
+  if (edge.kind === "routed") {
+    // moved block: orthogonal route(s) with rounded corners, drawn in canvas coordinates
+    return (
+      <div className="aw-node pointer-events-none" style={{ zIndex: z }}>
+        <svg aria-hidden width={1} height={1} overflow="visible" className="absolute top-0 left-0">
+          {edge.paths.map((d, i) => (
+            <path
+              key={i}
+              d={d}
+              stroke="#C4C4C4"
+              strokeWidth={1}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill="none"
+            />
+          ))}
+        </svg>
+        {edge.labels.map((l) => (
+          <BranchLabel
+            key={l.text}
+            label={l.text}
+            style={{ left: l.x, top: l.y, transform: "translate(-50%, -50%)" }}
+          />
+        ))}
+        <Asset
+          src={ASSETS.branchHandle}
+          w={14}
+          h={14}
+          className="absolute"
+          style={{ left: edge.port.x - 7, top: edge.port.y - 7 }}
+        />
+      </div>
+    )
+  }
   if (edge.kind === "connector") {
     // Figma "Group 2147293429": handle dot + 46px line + arrowhead (14×53.5)
     return (
-      <div className="aw-node pointer-events-none" style={{ transform: `translate(${edge.x}px, ${edge.y}px)` }}>
+      <div className="aw-node pointer-events-none" style={{ transform: `translate(${edge.x}px, ${edge.y}px)`, zIndex: z }}>
         <Asset src={ASSETS.connector} w={14} h={53.5} />
       </div>
     )
@@ -492,7 +884,7 @@ function Edge({ edge }: { edge: PlacedEdge }) {
   const arrow = (x: number) => `M${x - 3.18} ${tip - 3.18}L${x} ${tip}L${x + 3.18} ${tip - 3.18}`
   const shift = (d - BRANCH.spread) / 2
   return (
-    <div className="aw-node pointer-events-none" style={{ transform: `translate(${edge.x}px, ${edge.y}px)` }}>
+    <div className="aw-node pointer-events-none" style={{ transform: `translate(${edge.x}px, ${edge.y}px)`, zIndex: z }}>
       <svg aria-hidden width={1} height={1} overflow="visible" className="absolute top-0 left-0">
         <path
           d={`M${cx} ${CARD_H}V${bar}M${lx} ${bar}H${rx}M${lx} ${bar}V${tip}M${rx} ${bar}V${tip}${arrow(lx)}${arrow(rx)}`}
@@ -503,16 +895,16 @@ function Edge({ edge }: { edge: PlacedEdge }) {
           fill="none"
         />
       </svg>
-      <BranchLabel label="Is true" left={11 - shift} />
-      <BranchLabel label="Is false" left={214 + shift} />
+      <BranchLabel label="Is true" style={{ left: 11 - shift, top: 119 }} />
+      <BranchLabel label="Is false" style={{ left: 214 + shift, top: 119 }} />
       <Asset src={ASSETS.branchHandle} w={14} h={14} className="absolute" style={{ left: 133, top: 86 }} />
     </div>
   )
 }
 
-function BranchLabel({ label, left }: { label: string; left: number }) {
+function BranchLabel({ label, style }: { label: string; style: React.CSSProperties }) {
   return (
-    <span className="absolute flex h-[22px] items-center rounded-[8px] bg-(--aw-line-card) p-1" style={{ left, top: 119 }}>
+    <span className="absolute flex h-[22px] items-center rounded-[8px] bg-(--aw-line-card) p-1" style={style}>
       <span className="px-0.5 text-[14px] leading-none font-medium tracking-[-0.28px] whitespace-nowrap text-(--aw-muted)">
         {label}
       </span>

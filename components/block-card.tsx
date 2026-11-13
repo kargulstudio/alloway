@@ -29,15 +29,17 @@ const TITLE = "text-[14px] leading-none font-medium tracking-[-0.28px] text-(--a
  * Figma 1:5055 / 1:5075 … — 280×93 card, 12px radius, 1px #ECECEC ring.
  * The trigger carries the teal "Trigger" tab above it (83×26).
  * Double-click the title (or press F2 on a focused card) to rename it inline.
+ * The card body (and the trigger's tab) is the drag handle — see WorkflowCanvas.
  */
 export function BlockCard({ block, selected, onSelect, onRename, onDuplicate, onDelete }: BlockCardProps) {
   const isTrigger = block.kind === "trigger"
   const [editing, setEditing] = useState(false)
 
   return (
-    <div className="group/card relative flex w-[280px] flex-col items-start" data-selected={selected || undefined}>
+    <div className="aw-lift group/card relative flex w-[280px] flex-col items-start" data-selected={selected || undefined}>
       {isTrigger ? (
-        <div className="flex h-[26px] items-center gap-1 rounded-t-[8px] border border-(--aw-line-card) bg-(--aw-teal-soft) px-[7px] py-[5px]">
+        // the tab is a drag handle too
+        <div data-drag={block.id} className="aw-drag flex h-[26px] items-center gap-1 rounded-t-[8px] border border-(--aw-line-card) bg-(--aw-teal-soft) px-[7px] py-[5px]">
           <Asset src={ASSETS.stars} w={14} h={14} />
           <span className="px-0.5 text-[14px] leading-none font-medium tracking-[-0.28px] text-(--aw-teal)">Trigger</span>
         </div>
@@ -46,6 +48,7 @@ export function BlockCard({ block, selected, onSelect, onRename, onDuplicate, on
         role="button"
         tabIndex={0}
         data-block={block.id}
+        data-drag={block.id}
         data-selected={selected || undefined}
         aria-pressed={selected}
         aria-label={`${block.title} block`}
@@ -87,7 +90,7 @@ export function BlockCard({ block, selected, onSelect, onRename, onDuplicate, on
               {block.title}
             </span>
           )}
-          <span className="flex h-[22px] shrink-0 items-center rounded-[8px] bg-(--aw-chip) p-1">
+          <span data-no-drag="" className="flex h-[22px] shrink-0 items-center rounded-[8px] bg-(--aw-chip) p-1">
             <span className="px-0.5 text-[14px] leading-none font-medium tracking-[-0.28px] whitespace-nowrap text-(--aw-muted)">
               {block.chip}
             </span>

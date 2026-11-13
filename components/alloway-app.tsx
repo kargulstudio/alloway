@@ -5,14 +5,17 @@ import { toast } from "sonner"
 import { INITIAL_BLOCKS, INITIAL_ROOT, INITIAL_SELECTED, templateFor, type BlockTemplate } from "@/lib/data"
 import {
   changeBlockType,
+  dropOffsets,
   duplicateBlock,
   insertBlock,
   longestPath,
+  moveBlock,
   outcomesFor,
   removeBlock,
   updateBlock,
   type Graph,
   type InsertTarget,
+  type Offset,
 } from "@/lib/workflow"
 import { useHistory } from "@/lib/use-history"
 import { BREAKPOINTS, useMediaQuery } from "@/lib/use-media-query"
@@ -39,7 +42,7 @@ export function AllowayApp() {
   const [view, setView] = useState<View>("editor")
   const [name, setName] = useState("Untitled")
   const [status, setStatus] = useState<"draft" | "live">("draft")
-  const history = useHistory<Graph>({ blocks: INITIAL_BLOCKS, rootId: INITIAL_ROOT })
+  const history = useHistory<Graph>({ blocks: INITIAL_BLOCKS, rootId: INITIAL_ROOT, offsets: {} })
   const { commit, current, revert, undo, redo } = history
   const graph = history.value
   // The frame opens with the inspector on "Find list entries" but no canvas
@@ -118,7 +121,11 @@ export function AllowayApp() {
         return
       }
       const result = removeBlock(before.blocks, before.rootId, id)
-      const after: Graph = { blocks: result.blocks, rootId: result.rootId }
+      const after: Graph = {
+        blocks: result.blocks,
+        rootId: result.rootId,
+        offsets: dropOffsets(before.offsets, result.removed),
+      }
       const label = `Delete “${block.title}”`
       edit(after, label)
       select(null)
@@ -208,6 +215,19 @@ export function AllowayApp() {
     [current, edit, revert]
   )
 
+  /**
+   * Drag a block to a new offset from its auto-layout position. Each drag is
+   * one undo step; keyboard nudges on the same block merge (`nudge`).
+   */
+  const move = useCallback(
+    (id: string, offset: Offset, nudge?: boolean) => {
+      const block = current().blocks[id]
+      if (!block) return
+      edit((g) => moveBlock(g, id, offset), `Move “${block.title}”`, nudge ? `move:${id}` : undefined)
+    },
+    [current, edit]
+  )
+
   const selected = selectedId ? (graph.blocks[selectedId] ?? null) : null
   const outcomes = useMemo(() => (selectedId ? outcomesFor(graph.blocks, selectedId) : []), [graph.blocks, selectedId])
   const blockCount = Object.keys(graph.blocks).length
@@ -279,6 +299,8 @@ export function AllowayApp() {
               <WorkflowCanvas
                 blocks={graph.blocks}
                 rootId={graph.rootId}
+                offsets={graph.offsets}
+                onMove={move}
                 selectedId={selectedId}
                 showSelection={showSelection}
                 onSelect={select}
