@@ -100,6 +100,10 @@
   .aw-btn:focus-visible {
     box-shadow: var(--aw-ring), var(--aw-focus);
   }
+  /* toggled on (active canvas tool): stays pressed grey, even on hover */
+  .aw-btn[aria-pressed="true"]:not(:disabled) {
+    background-color: var(--aw-pressed);
+  }
 
   /* Ghost row (sidebar nav, outline list) */
   .aw-ghost {
@@ -120,7 +124,7 @@
     color: var(--aw-ink);
   }
 
-  /* Dark primary (Published) and the active canvas tool */
+  /* Dark primary (Published) */
   .aw-btn-dark {
     position: relative;
     overflow: hidden;

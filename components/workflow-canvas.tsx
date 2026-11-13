@@ -622,33 +622,16 @@ function CanvasToolbar({ zoom, tool, onTool, onZoomIn, onZoomOut, onReset, onFit
       <div className="contents max-sm:hidden">
       <Asset src={ASSETS.divider} w={1} h={14} />
 
-      {tool === "hand" ? (
-        <ActiveTool label="Hand tool" kbd="H">
-          <Asset src={ASSETS.hand} w={14} h={14} className="brightness-0 invert" />
-        </ActiveTool>
-      ) : (
-        <ToolButton label="Hand tool" kbd="H" onClick={() => onTool("hand")}>
-          <Asset src={ASSETS.hand} w={14} h={14} />
-        </ToolButton>
-      )}
-
-      {tool === "pointer" ? (
-        <Tooltip>
-          <TooltipTrigger
-            aria-label="Select tool"
-            aria-pressed
-            className="relative size-[30px] shrink-0 cursor-pointer rounded-[10px]"
-          >
-            {/* Figma 1:5043 — active tool tile, exported with its shadows (38×38, offset −4/−2) */}
-            <Asset src={ASSETS.pointerActive} w={38} h={38} className="absolute top-[-2px] left-[-4px]" />
-          </TooltipTrigger>
-          <TooltipContent>Select · V</TooltipContent>
-        </Tooltip>
-      ) : (
-        <ToolButton label="Select tool" kbd="V" onClick={() => onTool("pointer")}>
-          <MousePointerClickIcon className="size-[14px] text-(--aw-faint)" strokeWidth={1.6} />
-        </ToolButton>
-      )}
+      <ToolToggle label="Hand tool" kbd="H" active={tool === "hand"} onClick={() => onTool("hand")}>
+        <span
+          aria-hidden
+          className="sn-icon size-[14px]"
+          style={{ maskImage: `url(${ASSETS.hand})`, WebkitMaskImage: `url(${ASSETS.hand})` }}
+        />
+      </ToolToggle>
+      <ToolToggle label="Select tool" kbd="V" active={tool === "pointer"} onClick={() => onTool("pointer")}>
+        <MousePointerClickIcon className="size-[14px]" strokeWidth={1.6} />
+      </ToolToggle>
       </div>
 
       <Asset src={ASSETS.divider} w={1} h={14} />
@@ -737,15 +720,32 @@ function ToolButton({
   )
 }
 
-function ActiveTool({ label, kbd, children }: { label: string; kbd: string; children: React.ReactNode }) {
+/** Hand / Select: the same white tool button, pressed grey with an ink icon while active. */
+function ToolToggle({
+  label,
+  kbd,
+  active,
+  onClick,
+  children,
+}: {
+  label: string
+  kbd: string
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
   return (
     <Tooltip>
       <TooltipTrigger
         aria-label={label}
-        aria-pressed
-        className="aw-btn-dark flex size-[30px] shrink-0 items-center justify-center"
+        aria-pressed={active}
+        onClick={onClick}
+        data-tool=""
+        className={cn(
+          "aw-btn aw-hit flex size-[30px] shrink-0 items-center justify-center",
+          active ? "text-(--aw-ink)" : "text-(--aw-faint)"
+        )}
       >
-        <Asset src={ASSETS.publishGlow} w={196} h={62} className="pointer-events-none absolute top-[-35px] left-[-83px] -z-10" />
         {children}
       </TooltipTrigger>
       <TooltipContent>

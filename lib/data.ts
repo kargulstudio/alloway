@@ -26,7 +26,6 @@ export const ASSETS = {
   minus: `${A}/minus.svg`,
   plus: `${A}/plus.svg`,
   hand: `${A}/hand.svg`,
-  pointerActive: `${A}/pointer-active.svg`,
   doc: `${A}/file-05.svg`,
   rows: `${A}/rows-01.svg`,
   stars: `${A}/stars-01.svg`,
