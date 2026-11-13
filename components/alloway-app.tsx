@@ -2,8 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
-import { INITIAL_BLOCKS, INITIAL_ROOT, INITIAL_SELECTED, type BlockTemplate } from "@/lib/data"
-import { insertBlock, longestPath, outcomesFor, removeBlock, type Graph, type InsertTarget } from "@/lib/workflow"
+import { INITIAL_BLOCKS, INITIAL_ROOT, INITIAL_SELECTED, templateFor, type BlockTemplate } from "@/lib/data"
+import {
+  changeBlockType,
+  insertBlock,
+  longestPath,
+  outcomesFor,
+  removeBlock,
+  updateBlock,
+  type Graph,
+  type InsertTarget,
+} from "@/lib/workflow"
 import { Sidebar } from "./sidebar"
 import { TopBar, type View } from "./top-bar"
 import { WorkflowCanvas } from "./workflow-canvas"
@@ -87,8 +96,37 @@ export function AllowayApp() {
   }, [])
 
   const updateDescription = useCallback((id: string, value: string) => {
-    setGraph((g) => (g.blocks[id] ? { ...g, blocks: { ...g.blocks, [id]: { ...g.blocks[id], description: value } } } : g))
+    setGraph((g) => updateBlock(g, id, { description: value }))
     setStatus("draft")
+  }, [])
+
+  const updateTitle = useCallback((id: string, value: string) => {
+    setGraph((g) => updateBlock(g, id, { title: value }))
+    setStatus("draft")
+  }, [])
+
+  /** Inline rename on the card — confirmed with a toast (the inspector edits live). */
+  const renameBlock = useCallback((id: string, title: string) => {
+    const before = graphRef.current.blocks[id]?.title
+    setGraph((g) => updateBlock(g, id, { title }))
+    setStatus("draft")
+    if (before) toast.success(`Renamed to “${title}”`, { id: "rename-block" })
+  }, [])
+
+  const changeType = useCallback((id: string, template: BlockTemplate) => {
+    const before = graphRef.current
+    const block = before.blocks[id]
+    if (!block || block.type === template.type) return
+    const result = changeBlockType(before, id, template, templateFor(block.type))
+    setGraph(result.graph)
+    setStatus("draft")
+    if (result.removed.length) {
+      const n = result.removed.length
+      toast(`Changed to ${template.title}`, {
+        description: `Its “Is false” branch (${n} block${n > 1 ? "s" : ""}) was removed.`,
+        action: { label: "Undo", onClick: () => setGraph(before) },
+      })
+    }
   }, [])
 
   const selected = selectedId ? (graph.blocks[selectedId] ?? null) : null
@@ -130,6 +168,7 @@ export function AllowayApp() {
                 onSelect={select}
                 onDelete={deleteBlock}
                 onInsert={insert}
+                onRename={renameBlock}
                 freshId={freshId}
                 reveal={reveal}
               />
@@ -138,6 +177,8 @@ export function AllowayApp() {
                 outcomes={outcomes}
                 onBack={() => select(null)}
                 onDescriptionChange={updateDescription}
+                onTitleChange={updateTitle}
+                onTypeChange={changeType}
                 onDelete={deleteBlock}
                 onInsert={insert}
               />

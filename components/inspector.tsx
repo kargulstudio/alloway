@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { ASSETS, TONE_COLOR, type Block, type BlockTemplate } from "@/lib/data"
+import { ASSETS, BLOCK_TYPES, templateFor, TONE_COLOR, TRIGGER_TYPES, type Block, type BlockTemplate } from "@/lib/data"
 import type { InsertTarget, Outcome } from "@/lib/workflow"
 import { Asset, Tile } from "./asset"
 import { BlockPicker } from "./block-picker"
@@ -16,12 +16,23 @@ type InspectorProps = {
   outcomes: Outcome[]
   onBack: () => void
   onDescriptionChange: (id: string, value: string) => void
+  onTitleChange: (id: string, value: string) => void
+  onTypeChange: (id: string, template: BlockTemplate) => void
   onDelete: (id: string) => void
   onInsert: (target: InsertTarget, template: BlockTemplate) => void
 }
 
 /** Figma 1:5144 — 320px right panel: header · block · inputs · next step · actions. */
-export function Inspector({ block, outcomes, onBack, onDescriptionChange, onDelete, onInsert }: InspectorProps) {
+export function Inspector({
+  block,
+  outcomes,
+  onBack,
+  onDescriptionChange,
+  onTitleChange,
+  onTypeChange,
+  onDelete,
+  onInsert,
+}: InspectorProps) {
   const [nonce, setNonce] = useState(0)
 
   return (
@@ -43,11 +54,14 @@ export function Inspector({ block, outcomes, onBack, onDescriptionChange, onDele
 
       {block ? (
         <InspectorBody
-          key={`${block.id}:${nonce}`}
+          // a new type has new inputs: reload them like a freshly opened block
+          key={`${block.id}:${block.type}:${nonce}`}
           block={block}
           outcomes={outcomes}
           onRefresh={() => setNonce((n) => n + 1)}
           onDescriptionChange={onDescriptionChange}
+          onTitleChange={onTitleChange}
+          onTypeChange={onTypeChange}
           onDelete={onDelete}
           onInsert={onInsert}
         />
@@ -68,6 +82,8 @@ function InspectorBody({
   outcomes,
   onRefresh,
   onDescriptionChange,
+  onTitleChange,
+  onTypeChange,
   onDelete,
   onInsert,
 }: {
@@ -75,6 +91,8 @@ function InspectorBody({
   outcomes: Outcome[]
   onRefresh: () => void
   onDescriptionChange: (id: string, value: string) => void
+  onTitleChange: (id: string, value: string) => void
+  onTypeChange: (id: string, template: BlockTemplate) => void
   onDelete: (id: string) => void
   onInsert: (target: InsertTarget, template: BlockTemplate) => void
 }) {
@@ -99,12 +117,8 @@ function InspectorBody({
         <div className="flex w-full items-center gap-2.5">
           <Tile tone={tone} size={30} radius={10} glyph={block.inspectorIcon.lg} glyphSize={14} />
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            <h2 className="truncate aw-clip-safe text-[16px] leading-none font-medium tracking-[-0.32px] text-(--aw-ink)">{block.title}</h2>
-            <span className="flex h-5 shrink-0 items-center rounded-[6px] bg-(--aw-chip) p-1">
-              <span className="px-0.5 text-[12px] leading-none font-medium tracking-[-0.24px] text-(--aw-muted)">
-                {block.app}
-              </span>
-            </span>
+            <TitleField block={block} onChange={(v) => onTitleChange(block.id, v)} />
+            <TypeMenu block={block} onChange={(t) => onTypeChange(block.id, t)} />
           </div>
           <Tooltip>
             <TooltipTrigger
@@ -235,6 +249,69 @@ function InspectorBody({
         </button>
       </div>
     </>
+  )
+}
+
+/**
+ * The block title, editable in place. It looks like the Figma heading until
+ * hovered or focused; an inline-grid sizer keeps the type chip right after it.
+ */
+function TitleField({ block, onChange }: { block: Block; onChange: (value: string) => void }) {
+  const fallback = templateFor(block.type)?.title ?? "Untitled block"
+  const text = "text-[16px] leading-none font-medium tracking-[-0.32px] text-(--aw-ink)"
+  return (
+    <span className="inline-grid min-w-0">
+      <span aria-hidden className={cn(text, "invisible col-start-1 row-start-1 truncate px-1 py-1 whitespace-pre")}>
+        {block.title || fallback}
+      </span>
+      <input
+        aria-label="Block title"
+        value={block.title}
+        placeholder={fallback}
+        maxLength={60}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={(e) => {
+          if (!e.target.value.trim()) onChange(fallback)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur()
+        }}
+        className={cn(
+          text,
+          "col-start-1 row-start-1 -mx-1 w-[calc(100%+8px)] min-w-0 rounded-[6px] bg-transparent px-1 py-1 text-ellipsis outline-none",
+          "transition-[background-color,box-shadow] duration-(--duration-press) ease-out-strong",
+          "hover:bg-(--aw-hover) focus:bg-white focus:shadow-[0_0_0_1px_var(--aw-teal),0_0_0_3px_rgba(20,179,152,0.12)]!",
+          "placeholder:text-(--aw-faint)"
+        )}
+      />
+    </span>
+  )
+}
+
+/** The app chip doubles as the type menu (trigger events for the trigger). */
+function TypeMenu({ block, onChange }: { block: Block; onChange: (t: BlockTemplate) => void }) {
+  const isTrigger = block.kind === "trigger"
+  return (
+    <Tooltip>
+      <BlockPicker
+        side="bottom"
+        align="start"
+        templates={isTrigger ? TRIGGER_TYPES : BLOCK_TYPES}
+        current={block.type}
+        label={isTrigger ? "Trigger event" : "Block type"}
+        onPick={onChange}
+        trigger={
+          <TooltipTrigger
+            aria-label={isTrigger ? `Trigger event: ${block.title}. Change event` : `Block type: ${block.app}. Change type`}
+            className="flex h-5 shrink-0 cursor-pointer items-center gap-0.5 rounded-[6px] bg-(--aw-chip) py-1 pr-0.5 pl-1 transition-colors duration-(--duration-press) hover:bg-(--aw-chip-hover) data-popup-open:bg-(--aw-chip-hover)"
+          >
+            <span className="px-0.5 text-[12px] leading-none font-medium tracking-[-0.24px] text-(--aw-muted)">{block.app}</span>
+            <Asset src={ASSETS.chevronDown} w={10} h={10} />
+          </TooltipTrigger>
+        }
+      />
+      <TooltipContent side="bottom">{isTrigger ? "Change trigger event" : "Change block type"}</TooltipContent>
+    </Tooltip>
   )
 }
 

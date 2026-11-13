@@ -54,6 +54,7 @@ type CanvasProps = {
   onSelect: (id: string | null) => void
   onDelete: (id: string) => void
   onInsert: (target: InsertTarget, template: BlockTemplate) => void
+  onRename: (id: string, title: string) => void
   /** block that just appeared (plays the enter animation) */
   freshId: string | null
   /** bump `n` to pan a block into view */
@@ -69,6 +70,7 @@ export function WorkflowCanvas({
   onSelect,
   onDelete,
   onInsert,
+  onRename,
   freshId,
   reveal,
 }: CanvasProps) {
@@ -327,6 +329,7 @@ export function WorkflowCanvas({
                 block={block}
                 selected={showSelection && selectedId === p.id}
                 onSelect={() => onSelect(p.id)}
+                onRename={(title) => onRename(p.id, title)}
               />
               {/* "+" under the last block of a branch — revealed with its card */}
               {end ? <EndSlot top={tab + CARD_H} slot={end} onInsert={onInsert} /> : null}
