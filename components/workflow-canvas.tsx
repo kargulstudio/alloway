@@ -294,6 +294,8 @@ export function WorkflowCanvas({
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const target = e.target as Element
+    // React bubbles events through portals: ignore menus/sheets rendered outside the canvas DOM
+    if (!e.currentTarget.contains(target)) return
     if (target.closest("[data-canvas-ui]")) return
     const touch = e.pointerType === "touch"
     if (touch) {
