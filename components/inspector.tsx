@@ -242,10 +242,16 @@ function InspectorBody({
         <button
           type="button"
           onClick={() => onDelete(block.id)}
-          className={cn("aw-btn flex h-[30px] min-w-0 flex-1 items-center justify-center gap-1 p-2 text-(--aw-danger)", TEXT, "hover:bg-(--aw-danger-soft)!")}
+          // the trigger stays: the click explains why instead of deleting
+          aria-disabled={block.kind === "trigger" || undefined}
+          className={cn(
+            "aw-btn flex h-[30px] min-w-0 flex-1 items-center justify-center gap-1 p-2 text-(--aw-danger)",
+            TEXT,
+            "hover:bg-(--aw-danger-soft)! aria-disabled:opacity-50 aria-disabled:hover:bg-white!"
+          )}
         >
           <Asset src={ASSETS.trash} w={14} h={14} />
-          Delete block
+          {block.branches && (block.branches.true || block.branches.false) ? "Delete with branches" : "Delete block"}
         </button>
       </div>
     </>

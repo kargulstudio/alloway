@@ -55,6 +55,7 @@ type CanvasProps = {
   onDelete: (id: string) => void
   onInsert: (target: InsertTarget, template: BlockTemplate) => void
   onRename: (id: string, title: string) => void
+  onDuplicate: (id: string) => void
   /** block that just appeared (plays the enter animation) */
   freshId: string | null
   /** bump `n` to pan a block into view */
@@ -71,6 +72,7 @@ export function WorkflowCanvas({
   onDelete,
   onInsert,
   onRename,
+  onDuplicate,
   freshId,
   reveal,
 }: CanvasProps) {
@@ -196,7 +198,7 @@ export function WorkflowCanvas({
     return () => cancelAnimationFrame(frame)
   }, [reveal, size])
 
-  /* Keyboard: H / V tools, hold Space to pan, ⌘± / ⌘0 zoom, ⇧1 fit, ⌫ delete, Esc deselect. */
+  /* Keyboard: H / V tools, hold Space to pan, ⌘± / ⌘0 zoom, ⇧1 fit, ⌫ delete, ⌘D duplicate, Esc deselect. */
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return
@@ -217,6 +219,9 @@ export function WorkflowCanvas({
       } else if (mod && e.key === "0") {
         e.preventDefault()
         resetZoom()
+      } else if (mod && (e.key === "d" || e.key === "D") && !e.shiftKey && selectedId && showSelection) {
+        e.preventDefault()
+        onDuplicate(selectedId)
       } else if (mod) {
         return
       } else if (e.shiftKey && (e.key === "!" || e.code === "Digit1")) {
@@ -244,7 +249,7 @@ export function WorkflowCanvas({
       window.removeEventListener("keyup", up)
       window.removeEventListener("blur", blur)
     }
-  }, [zoomBy, resetZoom, fitToView, selectedId, showSelection, onDelete, onSelect])
+  }, [zoomBy, resetZoom, fitToView, selectedId, showSelection, onDelete, onSelect, onDuplicate])
 
   /* Drag to pan: empty canvas always pans; with the hand tool / Space anything does. */
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -330,6 +335,8 @@ export function WorkflowCanvas({
                 selected={showSelection && selectedId === p.id}
                 onSelect={() => onSelect(p.id)}
                 onRename={(title) => onRename(p.id, title)}
+                onDuplicate={() => onDuplicate(p.id)}
+                onDelete={() => onDelete(p.id)}
               />
               {/* "+" under the last block of a branch — revealed with its card */}
               {end ? <EndSlot top={tab + CARD_H} slot={end} onInsert={onInsert} /> : null}

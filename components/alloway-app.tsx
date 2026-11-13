@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { INITIAL_BLOCKS, INITIAL_ROOT, INITIAL_SELECTED, templateFor, type BlockTemplate } from "@/lib/data"
 import {
   changeBlockType,
+  duplicateBlock,
   insertBlock,
   longestPath,
   outcomesFor,
@@ -63,6 +64,13 @@ export function AllowayApp() {
       const before = graphRef.current
       const block = before.blocks[id]
       if (!block) return
+      if (block.kind === "trigger") {
+        toast("The trigger can’t be removed", {
+          id: "trigger-locked",
+          description: "Change its event from the type chip in the inspector instead.",
+        })
+        return
+      }
       const result = removeBlock(before.blocks, before.rootId, id)
       setGraph({ blocks: result.blocks, rootId: result.rootId })
       setSelectedId(null)
@@ -94,6 +102,28 @@ export function AllowayApp() {
     setReveal((r) => ({ id: result.id, n: (r?.n ?? 0) + 1 }))
     setStatus("draft")
   }, [])
+
+  const duplicate = useCallback((id: string) => {
+    const before = graphRef.current
+    const block = before.blocks[id]
+    const result = duplicateBlock(before, id)
+    if (!block || !result.id) return
+    setGraph(result.graph)
+    setSelectedId(result.id)
+    setShowSelection(true)
+    setFreshId(result.id)
+    setReveal((r) => ({ id: result.id, n: (r?.n ?? 0) + 1 }))
+    setStatus("draft")
+    toast(`Duplicated “${block.title}”`, {
+      action: {
+        label: "Undo",
+        onClick: () => {
+          setGraph(before)
+          select(id)
+        },
+      },
+    })
+  }, [select])
 
   const updateDescription = useCallback((id: string, value: string) => {
     setGraph((g) => updateBlock(g, id, { description: value }))
@@ -169,6 +199,7 @@ export function AllowayApp() {
                 onDelete={deleteBlock}
                 onInsert={insert}
                 onRename={renameBlock}
+                onDuplicate={duplicate}
                 freshId={freshId}
                 reveal={reveal}
               />

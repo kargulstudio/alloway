@@ -277,6 +277,46 @@
     }
   }
 
+  /* "…" actions on a block card's top-right corner (40px hit area around a 26px dot) */
+  .aw-card-menu {
+    background: #fff;
+    box-shadow: var(--aw-shadow-btn);
+    cursor: pointer;
+    opacity: 0;
+    transform: scale(0.85);
+    transition: opacity var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out),
+      background-color var(--duration-press) var(--ease-out);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .aw-card-menu::before {
+    content: "";
+    position: absolute;
+    inset: -7px;
+    border-radius: 999px;
+  }
+  .aw-card-menu:focus-visible,
+  .aw-card-menu[data-popup-open],
+  [data-selected] > .aw-card-menu,
+  .aw-node:focus-within .aw-card-menu {
+    opacity: 1;
+    transform: none;
+  }
+  .alloway .aw-card-menu:focus-visible {
+    box-shadow: var(--aw-shadow-btn), var(--aw-focus);
+  }
+  .aw-card-menu[data-popup-open] {
+    background-color: var(--aw-pressed);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .aw-node:hover .aw-card-menu {
+      opacity: 1;
+      transform: none;
+    }
+    .aw-card-menu:hover {
+      background-color: var(--aw-hover);
+    }
+  }
+
   /* truncated text with line-height:1 — give descenders room without moving layout */
   .aw-clip-safe {
     padding-block: 3px;
@@ -331,6 +371,7 @@
   .alloway .aw-card,
   .alloway .aw-slot-dot,
   .alloway .aw-end-stub,
+  .alloway .aw-card-menu,
   .alloway .aw-fade-in {
     transition: none;
     animation: none;

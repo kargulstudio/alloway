@@ -1,7 +1,16 @@
 "use client"
 
 import { useRef, useState } from "react"
+import { CopyIcon, EllipsisIcon, PencilLineIcon, Trash2Icon } from "lucide-react"
 import { cn } from "@/lib/utils"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { ASSETS, TONE_COLOR, type Block } from "@/lib/data"
 import { Asset, Tile } from "./asset"
 
@@ -10,6 +19,8 @@ type BlockCardProps = {
   selected: boolean
   onSelect: () => void
   onRename: (title: string) => void
+  onDuplicate: () => void
+  onDelete: () => void
 }
 
 const TITLE = "text-[14px] leading-none font-medium tracking-[-0.28px] text-(--aw-ink-2)"
@@ -19,12 +30,12 @@ const TITLE = "text-[14px] leading-none font-medium tracking-[-0.28px] text-(--a
  * The trigger carries the teal "Trigger" tab above it (83×26).
  * Double-click the title (or press F2 on a focused card) to rename it inline.
  */
-export function BlockCard({ block, selected, onSelect, onRename }: BlockCardProps) {
+export function BlockCard({ block, selected, onSelect, onRename, onDuplicate, onDelete }: BlockCardProps) {
   const isTrigger = block.kind === "trigger"
   const [editing, setEditing] = useState(false)
 
   return (
-    <div className="flex w-[280px] flex-col items-start">
+    <div className="group/card relative flex w-[280px] flex-col items-start" data-selected={selected || undefined}>
       {isTrigger ? (
         <div className="flex h-[26px] items-center gap-1 rounded-t-[8px] border border-(--aw-line-card) bg-(--aw-teal-soft) px-[7px] py-[5px]">
           <Asset src={ASSETS.stars} w={14} h={14} />
@@ -86,7 +97,86 @@ export function BlockCard({ block, selected, onSelect, onRename }: BlockCardProp
           {block.description.trim() || "No description"}
         </p>
       </div>
+      <CardMenu
+        block={block}
+        top={isTrigger ? 26 : 0}
+        onRename={() => setEditing(true)}
+        onDuplicate={onDuplicate}
+        onDelete={onDelete}
+      />
     </div>
+  )
+}
+
+/**
+ * "…" on the card's top-right corner: Rename · Duplicate · Delete. Revealed on
+ * hover / focus / selection (and while open); always there for the selected
+ * card on touch screens.
+ */
+function CardMenu({
+  block,
+  top,
+  onRename,
+  onDuplicate,
+  onDelete,
+}: {
+  block: Block
+  top: number
+  onRename: () => void
+  onDuplicate: () => void
+  onDelete: () => void
+}) {
+  const renaming = useRef(false)
+  const isTrigger = block.kind === "trigger"
+  const branching = !!block.branches
+  const hasBranchBlocks = !!(block.branches?.true || block.branches?.false)
+
+  return (
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (open) renaming.current = false
+      }}
+    >
+      <DropdownMenuTrigger
+        aria-label={`${block.title} actions`}
+        data-no-pan=""
+        className="aw-card-menu absolute -right-2.5 z-10 flex size-[26px] items-center justify-center rounded-full"
+        style={{ top: top - 10 }}
+      >
+        <EllipsisIcon className="size-[14px] text-(--aw-muted)" strokeWidth={1.75} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        side="right"
+        sideOffset={6}
+        className="w-52"
+        // Rename moves focus into the card's title field — don't pull it back to the trigger
+        finalFocus={() => !renaming.current}
+      >
+        <DropdownMenuItem
+          onClick={() => {
+            renaming.current = true
+            // after the menu has started closing, so its focus handling can't blur the field
+            requestAnimationFrame(onRename)
+          }}
+        >
+          <PencilLineIcon className="text-(--aw-faint)" />
+          Rename
+          <DropdownMenuShortcut>F2</DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onDuplicate} disabled={isTrigger || branching}>
+          <CopyIcon className="text-(--aw-faint)" />
+          {isTrigger ? "Duplicate (trigger is unique)" : branching ? "Duplicate (not for if/else)" : "Duplicate"}
+          {!isTrigger && !branching ? <DropdownMenuShortcut>⌘D</DropdownMenuShortcut> : null}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" onClick={onDelete} disabled={isTrigger}>
+          <Trash2Icon />
+          {isTrigger ? "Trigger can’t be removed" : branching && hasBranchBlocks ? "Delete with branches" : "Delete"}
+          {!isTrigger ? <DropdownMenuShortcut>⌫</DropdownMenuShortcut> : null}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -103,7 +193,7 @@ function TitleInput({ initial, onDone }: { initial: string; onDone: (title: stri
   return (
     <input
       autoFocus
-      aria-label="Block title"
+      aria-label="Rename block"
       value={value}
       maxLength={60}
       onFocus={(e) => e.currentTarget.select()}
