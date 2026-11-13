@@ -207,6 +207,76 @@
     animation: aw-node-in var(--duration-slow) var(--ease-out);
   }
 
+  /*
+   * Insert slots — a 40px hit target around a 22px "+" dot. Connector and
+   * branch slots reveal on hover/focus; end slots reveal with their card;
+   * on touch screens (no hover) they're always visible.
+   */
+  .aw-slot {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .alloway .aw-slot:focus-visible {
+    box-shadow: none;
+  }
+  .aw-slot-dot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: var(--aw-shadow-btn);
+    opacity: 0;
+    transform: scale(0.8);
+    transition: opacity var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out),
+      background-color var(--duration-press) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+  }
+  .aw-end-stub {
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-out);
+  }
+  .aw-slot:focus-visible .aw-slot-dot {
+    box-shadow: var(--aw-shadow-btn), var(--aw-focus);
+  }
+  .aw-slot:focus-visible .aw-slot-dot,
+  .aw-slot[data-popup-open] .aw-slot-dot,
+  .aw-end:focus-within .aw-slot-dot,
+  .aw-end:focus-within .aw-end-stub,
+  .aw-end:has([data-popup-open]) .aw-end-stub {
+    opacity: 1;
+    transform: none;
+  }
+  .aw-slot[data-popup-open] .aw-slot-dot {
+    box-shadow: var(--aw-shadow-card-selected);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .aw-slot:hover .aw-slot-dot,
+    .aw-node:hover > .aw-end .aw-slot-dot,
+    .aw-node:hover > .aw-end .aw-end-stub {
+      opacity: 1;
+      transform: none;
+    }
+    .aw-slot:hover .aw-slot-dot {
+      background-color: var(--aw-hover);
+    }
+  }
+  @media (hover: none) {
+    .aw-slot-dot,
+    .aw-end-stub {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
   /* truncated text with line-height:1 — give descenders room without moving layout */
   .aw-clip-safe {
     padding-block: 3px;
@@ -259,6 +329,8 @@
 @media (prefers-reduced-motion: reduce) {
   .alloway .aw-node,
   .alloway .aw-card,
+  .alloway .aw-slot-dot,
+  .alloway .aw-end-stub,
   .alloway .aw-fade-in {
     transition: none;
     animation: none;

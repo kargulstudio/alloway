@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { ASSETS, TONE_COLOR, type Block } from "@/lib/data"
-import type { Outcome } from "@/lib/workflow"
+import { ASSETS, TONE_COLOR, type Block, type BlockTemplate } from "@/lib/data"
+import type { InsertTarget, Outcome } from "@/lib/workflow"
 import { Asset, Tile } from "./asset"
+import { BlockPicker } from "./block-picker"
 
 const SECTION = "flex w-full shrink-0 flex-col bg-white shadow-[inset_1px_0_0_var(--aw-line),inset_0_-1px_0_var(--aw-line)]"
 const TEXT = "text-[14px] leading-none font-medium tracking-[-0.28px]"
@@ -16,10 +17,11 @@ type InspectorProps = {
   onBack: () => void
   onDescriptionChange: (id: string, value: string) => void
   onDelete: (id: string) => void
+  onInsert: (target: InsertTarget, template: BlockTemplate) => void
 }
 
 /** Figma 1:5144 — 320px right panel: header · block · inputs · next step · actions. */
-export function Inspector({ block, outcomes, onBack, onDescriptionChange, onDelete }: InspectorProps) {
+export function Inspector({ block, outcomes, onBack, onDescriptionChange, onDelete, onInsert }: InspectorProps) {
   const [nonce, setNonce] = useState(0)
 
   return (
@@ -47,6 +49,7 @@ export function Inspector({ block, outcomes, onBack, onDescriptionChange, onDele
           onRefresh={() => setNonce((n) => n + 1)}
           onDescriptionChange={onDescriptionChange}
           onDelete={onDelete}
+          onInsert={onInsert}
         />
       ) : (
         <div className={cn(SECTION, "aw-fade-in flex-1 items-center justify-center gap-1.5 p-6 text-center")}>
@@ -66,12 +69,14 @@ function InspectorBody({
   onRefresh,
   onDescriptionChange,
   onDelete,
+  onInsert,
 }: {
   block: Block
   outcomes: Outcome[]
   onRefresh: () => void
   onDescriptionChange: (id: string, value: string) => void
   onDelete: (id: string) => void
+  onInsert: (target: InsertTarget, template: BlockTemplate) => void
 }) {
   // Inputs + outcomes "load" every time a block is opened or refreshed.
   const [inputsReady, setInputsReady] = useState(false)
@@ -171,9 +176,26 @@ function InspectorBody({
                       {o.label}
                     </span>
                   </span>
-                  <span className={cn(TEXT, "truncate aw-clip-safe", o.target ? "text-(--aw-ink-2)" : "text-(--aw-faint)")}>
-                    {o.target ? `→ ${o.target}` : "End of workflow"}
-                  </span>
+                  {o.target ? (
+                    <span className={cn(TEXT, "truncate aw-clip-safe text-(--aw-ink-2)")}>→ {o.target}</span>
+                  ) : (
+                    <BlockPicker
+                      side="bottom"
+                      align="start"
+                      onPick={(t) => onInsert(o.insert, t)}
+                      trigger={
+                        <button
+                          type="button"
+                          className={cn(
+                            TEXT,
+                            "aw-ghost -mx-1 -my-1 truncate aw-clip-safe rounded-[6px] px-1 py-1 text-(--aw-faint) hover:text-(--aw-ink-2) data-popup-open:text-(--aw-ink-2)"
+                          )}
+                        >
+                          End of workflow · <span className="text-(--aw-teal)">Add step</span>
+                        </button>
+                      }
+                    />
+                  )}
                 </div>
               </div>
             ))

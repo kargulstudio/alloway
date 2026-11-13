@@ -5,9 +5,10 @@ import { MousePointerClickIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover"
-import { ASSETS, TONE_COLOR } from "@/lib/data"
+import { ASSETS, TONE_COLOR, type BlockTemplate } from "@/lib/data"
 import {
   boundsOf,
+  BRANCH,
   CANVAS_FRAME,
   CARD_H,
   CARD_W,
@@ -15,10 +16,13 @@ import {
   orderedIds,
   TRIGGER_TAB_H,
   type Blocks,
+  type InsertTarget,
   type PlacedEdge,
+  type PlacedSlot,
 } from "@/lib/workflow"
 import { Asset, Tile } from "./asset"
 import { BlockCard } from "./block-card"
+import { BlockPicker } from "./block-picker"
 
 type Viewport = { x: number; y: number; z: number }
 type Tool = "pointer" | "hand"
@@ -49,10 +53,25 @@ type CanvasProps = {
   showSelection: boolean
   onSelect: (id: string | null) => void
   onDelete: (id: string) => void
+  onInsert: (target: InsertTarget, template: BlockTemplate) => void
+  /** block that just appeared (plays the enter animation) */
+  freshId: string | null
+  /** bump `n` to pan a block into view */
+  reveal: { id: string; n: number } | null
 }
 
 /** Figma 1:643 — #FAFAFA canvas with an 18px dot grid; nodes on a pan/zoom layer. */
-export function WorkflowCanvas({ blocks, rootId, selectedId, showSelection, onSelect, onDelete }: CanvasProps) {
+export function WorkflowCanvas({
+  blocks,
+  rootId,
+  selectedId,
+  showSelection,
+  onSelect,
+  onDelete,
+  onInsert,
+  freshId,
+  reveal,
+}: CanvasProps) {
   const viewportRef = useRef<HTMLDivElement>(null)
   const drag = useRef<{ id: number; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null)
   const centred = useRef(false)
@@ -63,7 +82,15 @@ export function WorkflowCanvas({ blocks, rootId, selectedId, showSelection, onSe
   const gridId = useId()
 
   const layout = useMemo(() => layoutWorkflow(blocks, rootId), [blocks, rootId])
+  const layoutRef = useRef(layout)
+  useEffect(() => {
+    layoutRef.current = layout
+  }, [layout])
   const order = useMemo(() => orderedIds(blocks, rootId), [blocks, rootId])
+  const endSlots = useMemo(
+    () => new Map(layout.slots.filter((s) => s.variant === "end").map((s) => [s.from, s])),
+    [layout]
+  )
   const panMode = tool === "hand" || spaceHeld
 
   /* Centre the 880px Figma frame horizontally when the canvas is wider/narrower (0 at 1440). */
@@ -141,12 +168,40 @@ export function WorkflowCanvas({ blocks, rootId, selectedId, showSelection, onSe
     [layout, size]
   )
 
+  /* Pan just enough to bring a new / jumped-to block fully into view. */
+  useEffect(() => {
+    if (!reveal) return
+    const frame = requestAnimationFrame(() => {
+      const p = layoutRef.current.blocks.find((b) => b.id === reveal.id)
+      if (!p) return
+      const { w, h } = size()
+      const pad = 48
+      const bottomUi = 110
+      setView((v) => {
+        const left = v.x + p.x * v.z
+        const top = v.y + (p.y - TRIGGER_TAB_H) * v.z
+        const right = v.x + (p.x + CARD_W) * v.z
+        const bottom = v.y + (p.y + CARD_H + 40) * v.z
+        let dx = 0
+        let dy = 0
+        if (left < pad) dx = pad - left
+        else if (right > w - pad) dx = w - pad - right
+        if (top < pad) dy = pad - top
+        else if (bottom > h - bottomUi) dy = h - bottomUi - bottom
+        return dx || dy ? { ...v, x: v.x + dx, y: v.y + dy } : v
+      })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [reveal, size])
+
   /* Keyboard: H / V tools, hold Space to pan, ⌘± / ⌘0 zoom, ⇧1 fit, ⌫ delete, Esc deselect. */
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return
       const mod = e.metaKey || e.ctrlKey
       if (e.code === "Space") {
+        // Space still activates a focused button / menu item
+        if (e.target instanceof Element && e.target.closest("button, [role=button], [role=menuitem]")) return
         e.preventDefault()
         if (!e.repeat) setSpaceHeld(true)
         return
@@ -192,7 +247,7 @@ export function WorkflowCanvas({ blocks, rootId, selectedId, showSelection, onSe
   /* Drag to pan: empty canvas always pans; with the hand tool / Space anything does. */
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const target = e.target as Element
-    if (target.closest("[data-canvas-ui]")) return
+    if (target.closest("[data-canvas-ui], [data-no-pan]")) return
     if (e.button !== 0 && e.button !== 1) return
     if (e.button === 0 && !panMode && target.closest("[data-block]")) return
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -251,7 +306,7 @@ export function WorkflowCanvas({ blocks, rootId, selectedId, showSelection, onSe
 
       {/* Transformable world layer */}
       <div
-        className={cn("absolute top-0 left-0 origin-top-left", panMode && "[&_[data-block]]:pointer-events-none")}
+        className={cn("absolute top-0 left-0 origin-top-left", panMode && "[&_[data-block]]:pointer-events-none [&_[data-no-pan]]:pointer-events-none")}
         style={{
           transform: `translate(${view.x}px, ${view.y}px) scale(${view.z})`,
           willChange: panning ? "transform" : undefined,
@@ -260,13 +315,21 @@ export function WorkflowCanvas({ blocks, rootId, selectedId, showSelection, onSe
         {layout.blocks.map((p) => {
           const block = blocks[p.id]
           const tab = block.kind === "trigger" ? TRIGGER_TAB_H : 0
+          const end = endSlots.get(p.id)
           return (
-            <div key={p.id} className="aw-node" style={{ transform: `translate(${p.x}px, ${p.y - tab}px)` }}>
+            <div
+              key={p.id}
+              className="aw-node"
+              data-enter={freshId === p.id || undefined}
+              style={{ transform: `translate(${p.x}px, ${p.y - tab}px)` }}
+            >
               <BlockCard
                 block={block}
                 selected={showSelection && selectedId === p.id}
                 onSelect={() => onSelect(p.id)}
               />
+              {/* "+" under the last block of a branch — revealed with its card */}
+              {end ? <EndSlot top={tab + CARD_H} slot={end} onInsert={onInsert} /> : null}
             </div>
           )
         })}
@@ -274,6 +337,9 @@ export function WorkflowCanvas({ blocks, rootId, selectedId, showSelection, onSe
         {layout.edges.map((edge) => (
           <Edge key={edge.key} edge={edge} />
         ))}
+        {layout.slots.map((slot) =>
+          slot.variant === "end" ? null : <InsertSlot key={slot.key} slot={slot} onInsert={onInsert} />
+        )}
       </div>
 
       {layout.blocks.length === 0 ? (
@@ -314,27 +380,29 @@ function Edge({ edge }: { edge: PlacedEdge }) {
       </div>
     )
   }
-  // Figma "Group 2147293432": if/else split with "Is true" / "Is false" labels
+  // Figma "Group 2147293432": if/else split with "Is true" / "Is false" labels.
+  // Drawn from the layout so nested branches can spread wider than Figma's 195px.
+  const d = edge.spread
+  const cx = CARD_W / 2
+  const lx = cx - d - BRANCH.arrowOut
+  const rx = cx + d + BRANCH.arrowOut
+  const { barY: bar, tipY: tip } = BRANCH
+  const arrow = (x: number) => `M${x - 3.18} ${tip - 3.18}L${x} ${tip}L${x + 3.18} ${tip - 3.18}`
+  const shift = (d - BRANCH.spread) / 2
   return (
     <div className="aw-node pointer-events-none" style={{ transform: `translate(${edge.x}px, ${edge.y}px)` }}>
-      {edge.hasTrue ? (
-        <>
-          <Asset src={ASSETS.branchLeft} w={209.182} h={70} className="absolute" style={{ left: -68.69, top: 92.5 }} />
-          <BranchLabel label="Is true" left={11} />
-        </>
-      ) : null}
-      {edge.hasFalse ? (
-        <>
-          <Asset
-            src={ASSETS.branchRight}
-            w={209.182}
-            h={70}
-            className="absolute -scale-x-100"
-            style={{ left: 139.51, top: 92.5 }}
-          />
-          <BranchLabel label="Is false" left={214} />
-        </>
-      ) : null}
+      <svg aria-hidden width={1} height={1} overflow="visible" className="absolute top-0 left-0">
+        <path
+          d={`M${cx} ${CARD_H}V${bar}M${lx} ${bar}H${rx}M${lx} ${bar}V${tip}M${rx} ${bar}V${tip}${arrow(lx)}${arrow(rx)}`}
+          stroke="#C4C4C4"
+          strokeWidth={1}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+      </svg>
+      <BranchLabel label="Is true" left={11 - shift} />
+      <BranchLabel label="Is false" left={214 + shift} />
       <Asset src={ASSETS.branchHandle} w={14} h={14} className="absolute" style={{ left: 133, top: 86 }} />
     </div>
   )
@@ -347,6 +415,64 @@ function BranchLabel({ label, left }: { label: string; left: number }) {
         {label}
       </span>
     </span>
+  )
+}
+
+/* ------------------------------------------------------------ insert slots */
+
+function SlotButton({ label, ...props }: React.ComponentProps<"button"> & { label: string }) {
+  return (
+    <button type="button" aria-label={label} data-no-pan="" className="aw-slot" {...props}>
+      <span className="aw-slot-dot">
+        <Asset src={ASSETS.plus} w={12} h={12} />
+      </span>
+    </button>
+  )
+}
+
+function slotLabel(slot: PlacedSlot) {
+  if (slot.target.kind === "branch") return `Add a step to the ${slot.target.side === "true" ? "“Is true”" : "“Is false”"} branch`
+  return slot.variant === "end" ? "Add a step at the end" : "Insert a step here"
+}
+
+/** "+" on a connector / branch drop (hover or focus to reveal), or the empty-branch pill. */
+function InsertSlot({ slot, onInsert }: { slot: PlacedSlot; onInsert: CanvasProps["onInsert"] }) {
+  if (slot.variant === "empty") {
+    return (
+      <div className="aw-node" style={{ transform: `translate(${slot.x}px, ${slot.y}px)` }}>
+        <BlockPicker
+          onPick={(t) => onInsert(slot.target, t)}
+          trigger={
+            <button
+              type="button"
+              data-no-pan=""
+              aria-label={slotLabel(slot)}
+              className="aw-btn aw-slot-empty absolute flex h-[30px] -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full pr-3 pl-2 whitespace-nowrap"
+            >
+              <Asset src={ASSETS.plus} w={14} h={14} />
+              <span className="text-[13px] leading-none font-medium tracking-[-0.2px] text-(--aw-muted)">Add step</span>
+            </button>
+          }
+        />
+      </div>
+    )
+  }
+  return (
+    <div className="aw-node" style={{ transform: `translate(${slot.x - 20}px, ${slot.y - 20}px)` }}>
+      <BlockPicker onPick={(t) => onInsert(slot.target, t)} trigger={<SlotButton label={slotLabel(slot)} />} />
+    </div>
+  )
+}
+
+/** Stub line + "+" under the last block of a branch; lives inside the card's node so card hover reveals it. */
+function EndSlot({ top, slot, onInsert }: { top: number; slot: PlacedSlot; onInsert: CanvasProps["onInsert"] }) {
+  return (
+    <div className="aw-end absolute" style={{ left: CARD_W / 2 - 20, top }}>
+      <span aria-hidden className="aw-end-stub absolute left-[19.5px] top-0 h-[15px] w-px bg-[#C4C4C4]" />
+      <div className="absolute top-[6px] left-0">
+        <BlockPicker onPick={(t) => onInsert(slot.target, t)} trigger={<SlotButton label={slotLabel(slot)} />} />
+      </div>
+    </div>
   )
 }
 

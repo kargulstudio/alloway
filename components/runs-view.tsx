@@ -7,7 +7,16 @@ import { Asset } from "./asset"
 const TEXT = "text-[14px] leading-none font-medium tracking-[-0.28px]"
 
 /** Runs tab — not in the Figma frame; built from the same tokens as the editor. */
-export function RunsView({ name, onOpenEditor }: { name: string; onOpenEditor: () => void }) {
+export function RunsView({
+  name,
+  stepCount,
+  onOpenEditor,
+}: {
+  name: string
+  /** blocks on the longest path through the current workflow */
+  stepCount: number
+  onOpenEditor: () => void
+}) {
   const ok = RUNS.filter((r) => r.status === "succeeded").length
   return (
     <div className="aw-fade-in flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto bg-(--aw-canvas) p-6">
@@ -55,7 +64,7 @@ export function RunsView({ name, onOpenEditor }: { name: string; onOpenEditor: (
                 </td>
                 <td className={cn("px-4 text-(--aw-ink-2)", TEXT)}>{run.record}</td>
                 <td className={cn("px-4 text-(--aw-muted)", TEXT)}>{run.started}</td>
-                <td className={cn("px-4 text-(--aw-muted) tabular-nums", TEXT)}>{run.steps} / 5</td>
+                <td className={cn("px-4 text-(--aw-muted) tabular-nums", TEXT)}>{run.status === "succeeded" ? stepCount : Math.min(run.steps, stepCount)} / {stepCount}</td>
                 <td className={cn("px-4 text-(--aw-muted) tabular-nums", TEXT)}>{run.duration}</td>
               </tr>
             ))}

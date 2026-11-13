@@ -2,15 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
-import { INITIAL_BLOCKS, INITIAL_ROOT, INITIAL_SELECTED } from "@/lib/data"
-import { outcomesFor, removeBlock, type Blocks } from "@/lib/workflow"
+import { INITIAL_BLOCKS, INITIAL_ROOT, INITIAL_SELECTED, type BlockTemplate } from "@/lib/data"
+import { insertBlock, longestPath, outcomesFor, removeBlock, type Graph, type InsertTarget } from "@/lib/workflow"
 import { Sidebar } from "./sidebar"
 import { TopBar, type View } from "./top-bar"
 import { WorkflowCanvas } from "./workflow-canvas"
 import { Inspector } from "./inspector"
 import { RunsView } from "./runs-view"
-
-type Graph = { blocks: Blocks; rootId: string | null }
 
 /** Alloway workflow editor — Figma "Site Map" (1:516), 1440×1024. */
 export function AllowayApp() {
@@ -25,6 +23,8 @@ export function AllowayApp() {
   // highlight; the highlight appears once the user picks a block themselves.
   const [selectedId, setSelectedId] = useState<string | null>(INITIAL_SELECTED)
   const [showSelection, setShowSelection] = useState(false)
+  const [freshId, setFreshId] = useState<string | null>(null)
+  const [reveal, setReveal] = useState<{ id: string; n: number } | null>(null)
   const graphRef = useRef(graph)
 
   useEffect(() => {
@@ -75,6 +75,17 @@ export function AllowayApp() {
     []
   )
 
+  const insert = useCallback((target: InsertTarget, template: BlockTemplate) => {
+    const result = insertBlock(graphRef.current, target, template)
+    if (!result.id) return
+    setGraph(result.graph)
+    setSelectedId(result.id)
+    setShowSelection(true)
+    setFreshId(result.id)
+    setReveal((r) => ({ id: result.id, n: (r?.n ?? 0) + 1 }))
+    setStatus("draft")
+  }, [])
+
   const updateDescription = useCallback((id: string, value: string) => {
     setGraph((g) => (g.blocks[id] ? { ...g, blocks: { ...g.blocks, [id]: { ...g.blocks[id], description: value } } } : g))
     setStatus("draft")
@@ -83,6 +94,7 @@ export function AllowayApp() {
   const selected = selectedId ? (graph.blocks[selectedId] ?? null) : null
   const outcomes = useMemo(() => (selectedId ? outcomesFor(graph.blocks, selectedId) : []), [graph.blocks, selectedId])
   const blockCount = Object.keys(graph.blocks).length
+  const stepCount = useMemo(() => longestPath(graph.blocks, graph.rootId), [graph])
 
   return (
     <div className="alloway flex h-dvh min-h-[640px] w-full overflow-hidden">
@@ -117,6 +129,9 @@ export function AllowayApp() {
                 showSelection={showSelection}
                 onSelect={select}
                 onDelete={deleteBlock}
+                onInsert={insert}
+                freshId={freshId}
+                reveal={reveal}
               />
               <Inspector
                 block={selected}
@@ -124,10 +139,11 @@ export function AllowayApp() {
                 onBack={() => select(null)}
                 onDescriptionChange={updateDescription}
                 onDelete={deleteBlock}
+                onInsert={insert}
               />
             </>
           ) : (
-            <RunsView name={name} onOpenEditor={() => setView("editor")} />
+            <RunsView name={name} stepCount={stepCount} onOpenEditor={() => setView("editor")} />
           )}
         </main>
       </div>
