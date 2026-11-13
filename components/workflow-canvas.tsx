@@ -279,8 +279,10 @@ export function WorkflowCanvas({
     if (!el) return
     const ro = new ResizeObserver(([entry]) => {
       if (centred.current) return
-      centred.current = true
       const { width: w, height: h } = entry.contentRect
+      // a hidden tab / not-yet-laid-out canvas reports 0×0 — wait for a real size
+      if (w < 1 || h < 1) return
+      centred.current = true
       const fit = window.matchMedia(BREAKPOINTS.lg).matches ? null : fitView(restingRef.current, w, h)
       setView((v) => fit ?? { ...v, x: Math.round((w - CANVAS_FRAME.w) / 2) })
     })
