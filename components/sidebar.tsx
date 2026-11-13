@@ -4,17 +4,16 @@ import type { ReactNode } from "react"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ASSETS, FAVORITE_DOCS, FOOTER_NAV, PRIMARY_NAV, TEAMS } from "@/lib/data"
+import { comingSoon } from "@/lib/prototype"
 import { Asset, Tile } from "./asset"
 
 type SidebarProps = {
   collapsed: boolean
   onToggle: () => void
-  activeId: string
-  onNavigate: (id: string, label: string) => void
 }
 
 /** Figma 1:517 — 240px rail, white, right hairline #EDEDED. Collapses to a 62px icon rail. */
-export function Sidebar({ collapsed, onToggle, activeId, onNavigate }: SidebarProps) {
+export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   return (
     <aside
       aria-label="Sidebar"
@@ -73,8 +72,7 @@ export function Sidebar({ collapsed, onToggle, activeId, onNavigate }: SidebarPr
               key={item.id}
               label={item.label}
               collapsed={collapsed}
-              active={activeId === item.id}
-              onClick={() => onNavigate(item.id, item.label)}
+              onClick={() => comingSoon(item.label)}
               icon={<Asset src={item.icon} w={14} h={14} />}
             />
           ))}
@@ -86,8 +84,7 @@ export function Sidebar({ collapsed, onToggle, activeId, onNavigate }: SidebarPr
               key={item.id}
               label={item.label}
               collapsed={collapsed}
-              active={activeId === item.id}
-              onClick={() => onNavigate(item.id, item.label)}
+              onClick={() => comingSoon(item.label)}
               icon={<Asset src={item.icon} w={14} h={14} />}
             />
           ))}
@@ -99,8 +96,7 @@ export function Sidebar({ collapsed, onToggle, activeId, onNavigate }: SidebarPr
               key={item.id}
               label={item.label}
               collapsed={collapsed}
-              active={activeId === item.id}
-              onClick={() => onNavigate(item.id, item.label)}
+              onClick={() => comingSoon(item.label)}
               icon={<Tile tone="#14b398" size={14} radius={4} glyph={item.glyph} glyphSize={8} variant="xs" />}
             />
           ))}
@@ -115,8 +111,7 @@ export function Sidebar({ collapsed, onToggle, activeId, onNavigate }: SidebarPr
             label={item.label}
             collapsed={collapsed}
             gap={8}
-            active={activeId === item.id}
-            onClick={() => onNavigate(item.id, item.label)}
+            onClick={() => comingSoon(item.label)}
             icon={<Asset src={item.icon} w={14} h={14} />}
           />
         ))}
@@ -164,7 +159,7 @@ function NavRow({
 }: {
   label: string
   icon: ReactNode
-  active: boolean
+  active?: boolean
   collapsed: boolean
   gap?: number
   onClick: () => void

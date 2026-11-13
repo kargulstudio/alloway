@@ -16,6 +16,7 @@ import {
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
 import { ASSETS, RECENT_WORKFLOWS } from "@/lib/data"
+import { comingSoon } from "@/lib/prototype"
 import { Asset, Tile } from "./asset"
 
 export type View = "editor" | "runs"
@@ -102,7 +103,7 @@ function WorkflowSelector({ name, onRename }: { name: string; onRename: (n: stri
             <PencilLineIcon className="text-(--aw-faint)" />
             Rename workflow
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => toast(`Duplicated “${name}”`, { description: "Saved as a new draft." })}>
+          <DropdownMenuItem onClick={() => comingSoon("Duplicating workflows")}>
             <CopyIcon className="text-(--aw-faint)" />
             Duplicate
           </DropdownMenuItem>
@@ -115,7 +116,7 @@ function WorkflowSelector({ name, onRename }: { name: string; onRename: (n: stri
             {name}
           </DropdownMenuItem>
           {RECENT_WORKFLOWS.map((w) => (
-            <DropdownMenuItem key={w} className="pl-7" onClick={() => toast(`“${w}” isn’t part of this prototype`)}>
+            <DropdownMenuItem key={w} className="pl-7" onClick={() => comingSoon(`Opening “${w}”`)}>
               {w}
             </DropdownMenuItem>
           ))}

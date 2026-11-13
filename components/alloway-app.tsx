@@ -15,7 +15,6 @@ type Graph = { blocks: Blocks; rootId: string | null }
 /** Alloway workflow editor — Figma "Site Map" (1:516), 1440×1024. */
 export function AllowayApp() {
   const [collapsed, setCollapsed] = useState(false)
-  const [activeNav, setActiveNav] = useState("")
   const [view, setView] = useState<View>("editor")
   const [name, setName] = useState("Untitled")
   const [status, setStatus] = useState<"draft" | "live">("draft")
@@ -87,8 +86,6 @@ export function AllowayApp() {
       <Sidebar
         collapsed={collapsed}
         onToggle={() => setCollapsed((c) => !c)}
-        activeId={activeNav}
-        onNavigate={(id) => setActiveNav(id)}
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar
