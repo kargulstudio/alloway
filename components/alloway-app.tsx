@@ -15,6 +15,8 @@ type Graph = { blocks: Blocks; rootId: string | null }
 /** Alloway workflow editor — Figma "Site Map" (1:516), 1440×1024. */
 export function AllowayApp() {
   const [collapsed, setCollapsed] = useState(false)
+  // keyboard toggles skip the collapse animation (never animate keyboard actions)
+  const [instant, setInstant] = useState(false)
   const [view, setView] = useState<View>("editor")
   const [name, setName] = useState("Untitled")
   const [status, setStatus] = useState<"draft" | "live">("draft")
@@ -34,6 +36,7 @@ export function AllowayApp() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "\\") {
         e.preventDefault()
+        setInstant(true)
         setCollapsed((c) => !c)
       }
     }
@@ -85,7 +88,11 @@ export function AllowayApp() {
     <div className="alloway flex h-dvh min-h-[640px] w-full overflow-hidden">
       <Sidebar
         collapsed={collapsed}
-        onToggle={() => setCollapsed((c) => !c)}
+        instant={instant}
+        onToggle={() => {
+          setInstant(false)
+          setCollapsed((c) => !c)
+        }}
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar
