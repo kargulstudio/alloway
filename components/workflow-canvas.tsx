@@ -17,9 +17,11 @@ import {
   TRIGGER_TAB_H,
   type Blocks,
   type InsertTarget,
+  type Layout,
   type PlacedEdge,
   type PlacedSlot,
 } from "@/lib/workflow"
+import { BREAKPOINTS } from "@/lib/use-media-query"
 import { Asset, Tile } from "./asset"
 import { BlockCard } from "./block-card"
 import { BlockPicker } from "./block-picker"
@@ -41,6 +43,27 @@ function zoomAt(v: Viewport, cx: number, cy: number, nextZ: number): Viewport {
 function measure(el: HTMLElement | null) {
   const r = el?.getBoundingClientRect()
   return { w: r?.width ?? CANVAS_FRAME.w, h: r?.height ?? CANVAS_FRAME.h }
+}
+
+/**
+ * Zoom (≤100%) and offset that fit the whole workflow in a w×h canvas,
+ * clear of the floating toolbar. Phones get tighter padding.
+ */
+function fitView(layout: Layout, w: number, h: number): Viewport | null {
+  const b = boundsOf(layout)
+  if (!b) return null
+  const compact = w < 640
+  const pad = compact ? 16 : 56
+  const top = compact ? 28 : pad
+  const bottomUi = compact ? 88 : 110 // keep clear of the floating toolbar
+  const bw = b.maxX - b.minX
+  const bh = b.maxY - b.minY
+  const z = clampZ(Math.min((w - pad * 2) / bw, (h - top - bottomUi) / bh, 1))
+  return {
+    z,
+    x: (w - bw * z) / 2 - b.minX * z,
+    y: top + (h - top - bottomUi - bh * z) / 2 - b.minY * z,
+  }
 }
 
 const isTyping = (t: EventTarget | null) =>
@@ -77,7 +100,20 @@ export function WorkflowCanvas({
   reveal,
 }: CanvasProps) {
   const viewportRef = useRef<HTMLDivElement>(null)
-  const drag = useRef<{ id: number; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null)
+  const drag = useRef<{
+    id: number
+    sx: number
+    sy: number
+    ox: number
+    oy: number
+    moved: boolean
+    /** started on bare canvas (a plain click there deselects) */
+    onEmpty: boolean
+    touch: boolean
+  } | null>(null)
+  /* active touch points + the pinch gesture they form */
+  const touches = useRef(new Map<number, { x: number; y: number }>())
+  const pinch = useRef<{ dist: number; mid: { x: number; y: number }; view: Viewport } | null>(null)
   const centred = useRef(false)
   const [view, setView] = useState<Viewport>({ x: 0, y: 0, z: 1 })
   const [tool, setTool] = useState<Tool>("pointer")
@@ -97,15 +133,19 @@ export function WorkflowCanvas({
   )
   const panMode = tool === "hand" || spaceHeld
 
-  /* Centre the 880px Figma frame horizontally when the canvas is wider/narrower (0 at 1440). */
+  /*
+   * Desktop: centre the 880px Figma frame horizontally (0 at 1440).
+   * Below lg (phones, tablets): fit the whole workflow on screen instead.
+   */
   useEffect(() => {
     const el = viewportRef.current
     if (!el) return
     const ro = new ResizeObserver(([entry]) => {
       if (centred.current) return
       centred.current = true
-      const w = entry.contentRect.width
-      setView((v) => ({ ...v, x: Math.round((w - CANVAS_FRAME.w) / 2) }))
+      const { width: w, height: h } = entry.contentRect
+      const fit = window.matchMedia(BREAKPOINTS.lg).matches ? null : fitView(layoutRef.current, w, h)
+      setView((v) => fit ?? { ...v, x: Math.round((w - CANVAS_FRAME.w) / 2) })
     })
     ro.observe(el)
     return () => ro.disconnect()
@@ -147,19 +187,9 @@ export function WorkflowCanvas({
   }, [size])
 
   const fitToView = useCallback(() => {
-    const b = boundsOf(layout)
-    if (!b) return
     const { w, h } = size()
-    const pad = 56
-    const bottomUi = 110 // keep clear of the floating toolbar
-    const bw = b.maxX - b.minX
-    const bh = b.maxY - b.minY
-    const z = clampZ(Math.min((w - pad * 2) / bw, (h - pad - bottomUi) / bh, 1))
-    setView({
-      z,
-      x: (w - bw * z) / 2 - b.minX * z,
-      y: pad + (h - pad - bottomUi - bh * z) / 2 - b.minY * z,
-    })
+    const fit = fitView(layout, w, h)
+    if (fit) setView(fit)
   }, [layout, size])
 
   const centreOn = useCallback(
@@ -202,6 +232,8 @@ export function WorkflowCanvas({
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return
+      // keys inside a sheet or an open menu belong to it
+      if (e.target instanceof Element && e.target.closest("[role=dialog], [role=menu]")) return
       const mod = e.metaKey || e.ctrlKey
       if (e.code === "Space") {
         // Space still activates a focused button / menu item
@@ -251,31 +283,89 @@ export function WorkflowCanvas({
     }
   }, [zoomBy, resetZoom, fitToView, selectedId, showSelection, onDelete, onSelect, onDuplicate])
 
-  /* Drag to pan: empty canvas always pans; with the hand tool / Space anything does. */
+  /*
+   * Mouse: drag empty canvas to pan (with the hand tool / Space, anything).
+   * Touch: one finger pans from anywhere (a tap still selects), two fingers pinch-zoom.
+   */
+  const local = (x: number, y: number) => {
+    const r = viewportRef.current?.getBoundingClientRect()
+    return { x: x - (r?.left ?? 0), y: y - (r?.top ?? 0) }
+  }
+
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const target = e.target as Element
-    if (target.closest("[data-canvas-ui], [data-no-pan]")) return
-    if (e.button !== 0 && e.button !== 1) return
-    if (e.button === 0 && !panMode && target.closest("[data-block]")) return
-    e.currentTarget.setPointerCapture(e.pointerId)
-    drag.current = { id: e.pointerId, sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false }
+    if (target.closest("[data-canvas-ui]")) return
+    const touch = e.pointerType === "touch"
+    if (touch) {
+      touches.current.set(e.pointerId, local(e.clientX, e.clientY))
+      if (touches.current.size === 2) {
+        const [a, b] = [...touches.current.values()]
+        pinch.current = {
+          dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+          mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+          view,
+        }
+        drag.current = null
+        setPanning(true)
+        return
+      }
+      if (touches.current.size > 2) return
+    } else {
+      if (target.closest("[data-no-pan]")) return
+      if (e.button !== 0 && e.button !== 1) return
+      if (e.button === 0 && !panMode && target.closest("[data-block]")) return
+      e.currentTarget.setPointerCapture(e.pointerId)
+    }
+    drag.current = {
+      id: e.pointerId,
+      sx: e.clientX,
+      sy: e.clientY,
+      ox: view.x,
+      oy: view.y,
+      moved: false,
+      onEmpty: !target.closest("[data-block], [data-no-pan]"),
+      touch,
+    }
   }
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (touches.current.has(e.pointerId)) touches.current.set(e.pointerId, local(e.clientX, e.clientY))
+    const p = pinch.current
+    if (p && touches.current.size >= 2) {
+      const [a, b] = [...touches.current.values()]
+      const dist = Math.hypot(a.x - b.x, a.y - b.y)
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+      const z = clampZ((p.view.z * dist) / p.dist)
+      // keep the world point under the starting midpoint under the fingers
+      const wx = (p.mid.x - p.view.x) / p.view.z
+      const wy = (p.mid.y - p.view.y) / p.view.z
+      setView({ z, x: mid.x - wx * z, y: mid.y - wy * z })
+      return
+    }
     const d = drag.current
     if (!d || d.id !== e.pointerId) return
     const dx = e.clientX - d.sx
     const dy = e.clientY - d.sy
-    if (!d.moved && Math.hypot(dx, dy) < 3) return
+    if (!d.moved && Math.hypot(dx, dy) < (d.touch ? 6 : 3)) return
     if (!d.moved) {
       d.moved = true
       setPanning(true)
+      // touch captures only once it's a pan, so a tap still reaches the card / button
+      if (d.touch) e.currentTarget.setPointerCapture(e.pointerId)
     }
     setView((v) => ({ ...v, x: d.ox + dx, y: d.oy + dy }))
   }
   const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    touches.current.delete(e.pointerId)
+    if (pinch.current) {
+      if (touches.current.size < 2) {
+        pinch.current = null
+        setPanning(false)
+      }
+      return
+    }
     const d = drag.current
     if (!d || d.id !== e.pointerId) return
-    if (!d.moved && !panMode) onSelect(null) // plain click on empty canvas
+    if (!d.moved && !panMode && d.onEmpty) onSelect(null) // plain click / tap on empty canvas
     drag.current = null
     setPanning(false)
   }
@@ -457,7 +547,7 @@ function InsertSlot({ slot, onInsert }: { slot: PlacedSlot; onInsert: CanvasProp
               type="button"
               data-no-pan=""
               aria-label={slotLabel(slot)}
-              className="aw-btn aw-slot-empty absolute flex h-[30px] -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full pr-3 pl-2 whitespace-nowrap"
+              className="aw-btn aw-slot-empty absolute flex h-[30px] before:absolute before:-inset-[5px] before:content-[''] -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full pr-3 pl-2 whitespace-nowrap"
             >
               <Asset src={ASSETS.plus} w={14} h={14} />
               <span className="text-[13px] leading-none font-medium tracking-[-0.2px] text-(--aw-muted)">Add step</span>
@@ -507,7 +597,7 @@ function CanvasToolbar({ zoom, tool, onTool, onZoomIn, onZoomOut, onReset, onFit
   return (
     <div
       data-canvas-ui
-      className="absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-[20px] border border-(--aw-line) bg-(--aw-toolbar) p-[15px] shadow-(--aw-shadow-toolbar)"
+      className="absolute bottom-[calc(16px+env(safe-area-inset-bottom))] left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-[20px] border border-(--aw-line) bg-(--aw-toolbar) p-2.5 shadow-(--aw-shadow-toolbar) sm:bottom-6 sm:p-[15px]"
     >
       <ToolButton label="Zoom out" kbd="⌘−" onClick={onZoomOut} disabled={zoom <= MIN_Z + 0.001}>
         <Asset src={ASSETS.minus} w={14} h={14} />
@@ -516,7 +606,7 @@ function CanvasToolbar({ zoom, tool, onTool, onZoomIn, onZoomOut, onReset, onFit
         <TooltipTrigger
           onClick={onReset}
           aria-label={`Zoom ${Math.round(zoom * 100)}%, reset to 100%`}
-          className="flex h-[30px] min-w-[37px] cursor-pointer items-center justify-center rounded-[8px] px-0.5 font-(family-name:--aw-font-inter) text-[14px] leading-none font-medium tracking-[-0.28px] text-(--aw-muted) tabular-nums transition-colors duration-(--duration-press) hover:text-(--aw-ink-2)"
+          className="aw-hit relative flex h-[30px] min-w-[37px] cursor-pointer items-center justify-center rounded-[8px] px-0.5 font-(family-name:--aw-font-inter) text-[14px] leading-none font-medium tracking-[-0.28px] text-(--aw-muted) tabular-nums transition-colors duration-(--duration-press) hover:text-(--aw-ink-2)"
         >
           {Math.round(zoom * 100)}%
         </TooltipTrigger>
@@ -526,6 +616,8 @@ function CanvasToolbar({ zoom, tool, onTool, onZoomIn, onZoomOut, onReset, onFit
         <Asset src={ASSETS.plus} w={14} h={14} />
       </ToolButton>
 
+      {/* Phones pan with a finger — the hand / select tools only take room there */}
+      <div className="contents max-sm:hidden">
       <Asset src={ASSETS.divider} w={1} h={14} />
 
       {tool === "hand" ? (
@@ -555,6 +647,7 @@ function CanvasToolbar({ zoom, tool, onTool, onZoomIn, onZoomOut, onReset, onFit
           <MousePointerClickIcon className="size-[14px] text-(--aw-faint)" strokeWidth={1.6} />
         </ToolButton>
       )}
+      </div>
 
       <Asset src={ASSETS.divider} w={1} h={14} />
 
@@ -564,7 +657,7 @@ function CanvasToolbar({ zoom, tool, onTool, onZoomIn, onZoomOut, onReset, onFit
             render={
               <PopoverTrigger
                 aria-label="Workflow outline"
-                className="aw-btn flex size-[30px] items-center justify-center"
+                className="aw-btn aw-hit flex size-[30px] items-center justify-center"
                 data-tool=""
               />
             }
@@ -630,7 +723,7 @@ function ToolButton({
         onClick={onClick}
         disabled={disabled}
         data-tool=""
-        className="aw-btn flex size-[30px] shrink-0 items-center justify-center disabled:opacity-50"
+        className="aw-btn aw-hit flex size-[30px] shrink-0 items-center justify-center disabled:opacity-50"
       >
         {children}
       </TooltipTrigger>

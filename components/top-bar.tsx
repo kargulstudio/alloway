@@ -2,10 +2,11 @@
 
 import { useLayoutEffect, useRef, useState } from "react"
 import { toast } from "sonner"
-import { CheckIcon, CopyIcon, PencilLineIcon } from "lucide-react"
+import { CheckIcon, CopyIcon, EllipsisIcon, LinkIcon, PencilLineIcon, PlayIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
@@ -29,21 +30,103 @@ type TopBarProps = {
   status: "draft" | "live"
   blockCount: number
   onPublish: () => void
+  /** opens the sidebar drawer (below lg) */
+  onOpenMenu: () => void
 }
 
-/** Figma 1:613 — 62px bar; selector · Editor/Runs · Draft | Share · Published. */
-export function TopBar({ name, onRename, view, onViewChange, status, blockCount, onPublish }: TopBarProps) {
+const SHARE_LINK = "https://app.alloway.com/w/untitled-7f3k"
+
+async function copyShareLink() {
+  try {
+    await navigator.clipboard?.writeText(SHARE_LINK)
+  } catch {
+    /* clipboard may be blocked — the toast still confirms intent */
+  }
+  toast.success("Link copied to clipboard")
+}
+
+/**
+ * Figma 1:613 — 62px bar; selector · Editor/Runs · Draft | Share · Published.
+ * Below lg a menu button opens the sidebar drawer; below md Draft/Share/Publish
+ * fold into a "…" menu so the name and the view toggle keep their room.
+ */
+export function TopBar({ name, onRename, view, onViewChange, status, blockCount, onPublish, onOpenMenu }: TopBarProps) {
+  const [anyone, setAnyone] = useState(true)
+  const toggleAnyone = (v: boolean) => {
+    setAnyone(v)
+    toast(v ? "Workspace access on" : "Only invited people can view")
+  }
+
   return (
-    <header className="flex h-(--aw-header) shrink-0 items-center justify-between bg-white px-4 py-3 shadow-[inset_0_-1px_0_var(--aw-line)]">
-      <WorkflowSelector name={name} onRename={onRename} />
+    <header className="flex h-(--aw-header) shrink-0 items-center justify-between gap-2 bg-white px-3 py-3 shadow-[inset_0_-1px_0_var(--aw-line)] md:px-4">
+      <div className="flex min-w-0 items-center gap-2">
+        <button
+          type="button"
+          aria-label="Open menu"
+          onClick={onOpenMenu}
+          className="aw-btn flex size-10 shrink-0 items-center justify-center lg:hidden"
+        >
+          <Asset src={ASSETS.collapse} w={14} h={14} className="-scale-x-100" />
+        </button>
+        <WorkflowSelector name={name} onRename={onRename} />
+      </div>
       <ViewToggle view={view} onChange={onViewChange} />
-      <div className="flex items-center gap-2">
+      <div className="hidden items-center gap-2 md:flex">
         <StatusBadge status={status} />
         <Asset src={ASSETS.divider} w={1} h={14} />
-        <ShareButton name={name} />
+        <ShareButton name={name} anyone={anyone} onAnyoneChange={toggleAnyone} />
         <PublishButton name={name} status={status} blockCount={blockCount} onPublish={onPublish} />
       </div>
+      <MoreMenu status={status} blockCount={blockCount} anyone={anyone} onAnyoneChange={toggleAnyone} onPublish={onPublish} />
     </header>
+  )
+}
+
+/** Phones: Draft/Live, Publish and Share in one "…" menu. */
+function MoreMenu({
+  status,
+  blockCount,
+  anyone,
+  onAnyoneChange,
+  onPublish,
+}: {
+  status: "draft" | "live"
+  blockCount: number
+  anyone: boolean
+  onAnyoneChange: (v: boolean) => void
+  onPublish: () => void
+}) {
+  const live = status === "live"
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger aria-label="Workflow actions" className="aw-btn relative flex size-10 shrink-0 items-center justify-center md:hidden">
+        <EllipsisIcon className="size-4 text-(--aw-muted)" strokeWidth={1.75} />
+        {/* unpublished changes */}
+        {!live ? <span aria-hidden className="absolute top-2 right-2 size-1.5 rounded-full bg-(--aw-teal)" /> : null}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={6} className="w-64">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="flex items-center gap-1.5">
+            <span className={cn("size-1.5 rounded-full", live ? "bg-(--aw-teal)" : "bg-(--aw-faint)")} />
+            {live ? `Live · ${blockCount} blocks` : `Draft · ${blockCount} blocks`}
+          </DropdownMenuLabel>
+          <DropdownMenuItem className="min-h-10" disabled={live} onClick={onPublish}>
+            <PlayIcon className="text-(--aw-faint)" />
+            {live ? "Everything is live" : "Publish changes"}
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuItem className="min-h-10" onClick={copyShareLink}>
+            <LinkIcon className="text-(--aw-faint)" />
+            Copy share link
+          </DropdownMenuItem>
+          <DropdownMenuCheckboxItem className="min-h-10" checked={anyone} onCheckedChange={onAnyoneChange}>
+            Workspace can view
+          </DropdownMenuCheckboxItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -64,7 +147,7 @@ function WorkflowSelector({ name, onRename }: { name: string; onRename: (n: stri
 
   if (editing) {
     return (
-      <div className="aw-btn flex h-9 items-center gap-2 p-2 shadow-[0_0_0_1px_var(--aw-teal),0_0_0_4px_rgba(20,179,152,0.12)]">
+      <div className="aw-btn flex h-10 min-w-0 items-center gap-2 p-2 md:h-9 shadow-[0_0_0_1px_var(--aw-teal),0_0_0_4px_rgba(20,179,152,0.12)]">
         <Tile tone="#14b398" size={20} radius={6} glyph={ASSETS.fileTeal12} glyphSize={12} />
         <input
           autoFocus
@@ -79,7 +162,7 @@ function WorkflowSelector({ name, onRename }: { name: string; onRename: (n: stri
               setEditing(false)
             }
           }}
-          className="w-[160px] bg-transparent text-[14px] leading-none font-medium tracking-[-0.28px] text-(--aw-ink-2) outline-none"
+          className="w-[160px] min-w-0 bg-transparent text-[14px] leading-none font-medium tracking-[-0.28px] text-(--aw-ink-2) outline-none"
         />
       </div>
     )
@@ -87,7 +170,7 @@ function WorkflowSelector({ name, onRename }: { name: string; onRename: (n: stri
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="aw-btn flex h-9 max-w-[280px] items-center gap-2 p-2">
+      <DropdownMenuTrigger className="aw-btn flex h-10 max-w-[280px] min-w-0 items-center gap-2 p-2 md:h-9">
         <Tile tone="#14b398" size={20} radius={6} glyph={ASSETS.fileTeal12} glyphSize={12} />
         <span className="truncate aw-clip-safe text-[14px] leading-none font-medium tracking-[-0.28px] text-(--aw-ink-2)">{name}</span>
         <Asset src={ASSETS.chevronDown} w={14} h={14} />
@@ -165,7 +248,7 @@ function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => voi
           aria-selected={view === v.id}
           onClick={() => onChange(v.id)}
           className={cn(
-            "relative flex h-[30px] cursor-pointer items-center justify-center rounded-[10px] p-2 text-[14px] leading-none font-medium tracking-[-0.21px]",
+            "aw-hit relative flex h-[30px] cursor-pointer items-center justify-center rounded-[10px] p-2 text-[14px] leading-none font-medium tracking-[-0.21px]",
             "transition-colors duration-(--duration-press) ease-(--ease-out)",
             view === v.id ? "text-(--aw-ink)" : "text-(--aw-muted) hover:text-(--aw-ink-2)",
             // before the pill is measured (SSR / first paint) the active tab paints its own surface
@@ -195,18 +278,17 @@ function StatusBadge({ status }: { status: "draft" | "live" }) {
 
 /* ------------------------------------------------------------------ share */
 
-function ShareButton({ name }: { name: string }) {
-  const [anyone, setAnyone] = useState(true)
-  const link = "https://app.alloway.com/w/untitled-7f3k"
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard?.writeText(link)
-    } catch {
-      /* clipboard may be blocked — the toast still confirms intent */
-    }
-    toast.success("Link copied to clipboard")
-  }
+function ShareButton({
+  name,
+  anyone,
+  onAnyoneChange,
+}: {
+  name: string
+  anyone: boolean
+  onAnyoneChange: (v: boolean) => void
+}) {
+  const link = SHARE_LINK
+  const copy = copyShareLink
 
   return (
     <Popover>
@@ -237,10 +319,7 @@ function ShareButton({ name }: { name: string }) {
           Anyone in the workspace can view
           <Switch
             checked={anyone}
-            onCheckedChange={(v) => {
-              setAnyone(v)
-              toast(v ? "Workspace access on" : "Only invited people can view")
-            }}
+            onCheckedChange={onAnyoneChange}
             className="data-checked:bg-(--aw-teal)"
           />
         </label>

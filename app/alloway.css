@@ -317,6 +317,16 @@
     }
   }
 
+  /* Grows a small control's hit area to ≥40px without changing its look (touch targets). */
+  .aw-hit {
+    position: relative;
+  }
+  .aw-hit::before {
+    content: "";
+    position: absolute;
+    inset: -5px;
+  }
+
   /* truncated text with line-height:1 — give descenders room without moving layout */
   .aw-clip-safe {
     padding-block: 3px;

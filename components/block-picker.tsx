@@ -1,6 +1,6 @@
 "use client"
 
-import type { ReactElement } from "react"
+import { useState, type ReactElement } from "react"
 import { cn } from "@/lib/utils"
 import {
   DropdownMenu,
@@ -12,7 +12,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { BLOCK_TYPES, groupByCategory, TONE_COLOR, type BlockTemplate } from "@/lib/data"
+import { BREAKPOINTS, useMediaQuery } from "@/lib/use-media-query"
 import { Tile } from "./asset"
+import { Sheet } from "./sheet"
 
 const GROUPS = groupByCategory(BLOCK_TYPES)
 
@@ -32,8 +34,16 @@ type BlockPickerProps = {
   label?: string
 }
 
-/** Grouped block catalog (Conditions · Tasks · Records · Utilities) in a menu. */
-export function BlockPicker({
+/**
+ * Grouped block catalog (Conditions · Tasks · Records · Utilities): a menu
+ * next to the trigger, or a bottom sheet with the same grouping on phones.
+ */
+export function BlockPicker(props: BlockPickerProps) {
+  const phone = !useMediaQuery(BREAKPOINTS.md)
+  return phone ? <BlockPickerSheet {...props} /> : <BlockPickerMenu {...props} />
+}
+
+function BlockPickerMenu({
   trigger,
   onPick,
   side = "bottom",
@@ -65,6 +75,52 @@ export function BlockPicker({
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+function BlockPickerSheet({ trigger, onPick, open, onOpenChange, templates, current, label = "Add a step" }: BlockPickerProps) {
+  const [ownOpen, setOwnOpen] = useState(false)
+  const isOpen = open ?? ownOpen
+  const setOpen = (next: boolean) => {
+    setOwnOpen(next)
+    onOpenChange?.(next)
+  }
+  const groups = templates ? groupByCategory(templates) : GROUPS
+  return (
+    <Sheet open={isOpen} onOpenChange={setOpen} trigger={trigger} title={label}>
+      <div className="flex flex-col gap-4 px-4 pt-1 pb-5">
+        {groups.map((group) => (
+          <section key={group.category} className="flex flex-col gap-1" aria-label={group.category}>
+            <h3 className="px-1 pb-1 font-(family-name:--aw-font-mono) text-[12px] leading-none font-medium tracking-[-0.36px] text-(--aw-label)">
+              {group.category}
+            </h3>
+            {group.items.map((t) => (
+              <button
+                key={t.type}
+                type="button"
+                aria-current={current === t.type || undefined}
+                onClick={() => {
+                  setOpen(false)
+                  onPick(t)
+                }}
+                className="aw-ghost flex min-h-12 w-full items-center gap-3 px-2 py-2 text-left aria-[current]:bg-(--aw-chip)"
+              >
+                <Tile tone={TONE_COLOR[t.tone]} size={28} radius={8} glyph={t.icon} glyphSize={13} />
+                <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <span className="truncate aw-clip-safe text-[15px] leading-none font-medium tracking-[-0.28px] text-(--aw-ink-2)">
+                    {t.title}
+                  </span>
+                  <span className="truncate aw-clip-safe text-[13px] leading-none font-medium tracking-[-0.2px] text-(--aw-faint)">
+                    {t.hint}
+                  </span>
+                </span>
+                {current === t.type ? <span className="text-[13px] leading-none font-medium text-(--aw-teal)">Current</span> : null}
+              </button>
+            ))}
+          </section>
+        ))}
+      </div>
+    </Sheet>
   )
 }
 

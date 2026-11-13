@@ -11,7 +11,11 @@ type SidebarProps = {
   collapsed: boolean
   /** true when the last toggle came from the keyboard → skip the animation */
   instant: boolean
+  /** ≥1024px: docked rail. Below: off-canvas drawer. */
+  isDesktop: boolean
+  mobileOpen: boolean
   onToggle: () => void
+  onCloseMobile: () => void
 }
 
 /**
@@ -21,19 +25,36 @@ type SidebarProps = {
 const SLOW = "duration-(--duration-slow) ease-out-strong group-data-instant/aw-sidebar:transition-none motion-reduce:transition-none"
 const FADE = "transition-opacity duration-(--duration-fast) ease-out-strong group-data-instant/aw-sidebar:transition-none motion-reduce:transition-none"
 
-/** Figma 1:517 — 240px rail, white, right hairline #EDEDED. Collapses to a 62px icon rail. */
-export function Sidebar({ collapsed, instant, onToggle }: SidebarProps) {
+/**
+ * Figma 1:517 — 240px rail, white, right hairline #EDEDED. Collapses to a 62px icon rail.
+ * Below 1024px it's an off-canvas drawer (opened from the top bar) that slides on the drawer curve.
+ */
+export function Sidebar({ collapsed, instant, isDesktop, mobileOpen, onToggle, onCloseMobile }: SidebarProps) {
+  // on the drawer, every destination also closes it
+  const go = (feature: string) => {
+    comingSoon(feature)
+    if (!isDesktop) onCloseMobile()
+  }
+
   return (
     <aside
       aria-label="Sidebar"
       data-collapsed={collapsed || undefined}
       data-instant={instant || undefined}
+      data-mobile-open={mobileOpen || undefined}
+      // the off-screen drawer must not be reachable by Tab / screen readers
+      inert={!isDesktop && !mobileOpen}
       className={cn(
-        "group/aw-sidebar relative z-10 flex h-full shrink-0 flex-col overflow-hidden bg-white",
+        "group/aw-sidebar flex h-full shrink-0 flex-col overflow-hidden bg-white",
         "shadow-[inset_-1px_0_0_var(--aw-line)]",
         "w-(--aw-sidebar) data-collapsed:w-(--aw-sidebar-collapsed)",
-        "transition-[width]",
-        SLOW
+        // < lg: off-canvas drawer
+        "fixed inset-y-0 left-0 z-50 -translate-x-full data-mobile-open:translate-x-0",
+        "data-mobile-open:shadow-[inset_-1px_0_0_var(--aw-line),16px_0_48px_-8px_rgba(9,9,11,0.24)]",
+        "transition-[translate,box-shadow] duration-300 ease-drawer motion-reduce:transition-none",
+        // ≥ lg: docked rail; only the width animates (collapse)
+        "lg:relative lg:z-10 lg:translate-x-0 lg:transition-[width] lg:duration-(--duration-slow) lg:ease-out-strong",
+        "group-data-instant/aw-sidebar:transition-none data-instant:transition-none"
       )}
     >
       {/* Brand — 1:518. The logo always stays (centred on the 62px rail axis); only the wordmark fades. */}
@@ -71,10 +92,10 @@ export function Sidebar({ collapsed, instant, onToggle }: SidebarProps) {
       >
         <Tooltip>
           <TooltipTrigger
-            onClick={onToggle}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-expanded={!collapsed}
-            className="aw-btn flex size-[30px] items-center justify-center"
+            onClick={isDesktop ? onToggle : onCloseMobile}
+            aria-label={!isDesktop ? "Close menu" : collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={isDesktop ? !collapsed : undefined}
+            className="aw-btn aw-hit flex size-[30px] items-center justify-center"
           >
             <Asset
               src={ASSETS.collapse}
@@ -84,7 +105,7 @@ export function Sidebar({ collapsed, instant, onToggle }: SidebarProps) {
             />
           </TooltipTrigger>
           <TooltipContent side="right" sideOffset={8}>
-            {collapsed ? "Expand" : "Collapse"} sidebar · ⌘\
+            {!isDesktop ? "Close menu" : `${collapsed ? "Expand" : "Collapse"} sidebar · ⌘\\`}
           </TooltipContent>
         </Tooltip>
       </div>
@@ -107,7 +128,7 @@ export function Sidebar({ collapsed, instant, onToggle }: SidebarProps) {
                 key={item.id}
                 label={item.label}
                 collapsed={collapsed}
-                onClick={() => comingSoon(item.label)}
+                onClick={() => go(item.label)}
                 icon={<Asset src={item.icon} w={14} h={14} />}
               />
             ))}
@@ -120,7 +141,7 @@ export function Sidebar({ collapsed, instant, onToggle }: SidebarProps) {
               key={item.id}
               label={item.label}
               collapsed={collapsed}
-              onClick={() => comingSoon(item.label)}
+              onClick={() => go(item.label)}
               icon={<Asset src={item.icon} w={14} h={14} />}
             />
           ))}
@@ -132,7 +153,7 @@ export function Sidebar({ collapsed, instant, onToggle }: SidebarProps) {
               key={item.id}
               label={item.label}
               collapsed={collapsed}
-              onClick={() => comingSoon(`${item.label} team`)}
+              onClick={() => go(`${item.label} team`)}
               icon={<Tile tone="#14b398" size={14} radius={4} glyph={item.glyph} glyphSize={8} variant="xs" />}
             />
           ))}
@@ -147,7 +168,7 @@ export function Sidebar({ collapsed, instant, onToggle }: SidebarProps) {
             label={item.label}
             collapsed={collapsed}
             gap={8}
-            onClick={() => comingSoon(item.label)}
+            onClick={() => go(item.label)}
             icon={<Asset src={item.icon} w={14} h={14} />}
           />
         ))}
@@ -199,7 +220,7 @@ function NavRow({
       type="button"
       onClick={onClick}
       aria-label={collapsed ? label : undefined}
-      className="aw-ghost flex h-[30px] w-full items-center overflow-hidden p-2 text-left text-(--aw-muted)"
+      className="aw-ghost flex h-10 w-full items-center overflow-hidden p-2 text-left text-(--aw-muted) lg:h-[30px]"
       style={{ gap }}
     >
       {icon}

@@ -8,10 +8,15 @@ import type { InsertTarget, Outcome } from "@/lib/workflow"
 import { Asset, Tile } from "./asset"
 import { BlockPicker } from "./block-picker"
 
-const SECTION = "flex w-full shrink-0 flex-col bg-white shadow-[inset_1px_0_0_var(--aw-line),inset_0_-1px_0_var(--aw-line)]"
+const SECTION =
+  "flex w-full shrink-0 flex-col bg-white shadow-[inset_1px_0_0_var(--aw-line),inset_0_-1px_0_var(--aw-line)] group-data-[layout=sheet]/insp:shadow-[inset_0_-1px_0_var(--aw-line)]"
+/** Bigger touch targets when the inspector is a bottom sheet. */
+const SHEET_BTN = "group-data-[layout=sheet]/insp:h-10"
 const TEXT = "text-[14px] leading-none font-medium tracking-[-0.28px]"
 
 type InspectorProps = {
+  /** panel: Figma's 320px right column (≥1024px). sheet: content of the phone/tablet bottom sheet. */
+  layout?: "panel" | "sheet"
   block: Block | null
   outcomes: Outcome[]
   onBack: () => void
@@ -22,8 +27,9 @@ type InspectorProps = {
   onInsert: (target: InsertTarget, template: BlockTemplate) => void
 }
 
-/** Figma 1:5144 — 320px right panel: header · block · inputs · next step · actions. */
+/** Figma 1:5144 — 320px right panel: header · block · inputs · next step · actions. Also the bottom-sheet body. */
 export function Inspector({
+  layout = "panel",
   block,
   outcomes,
   onBack,
@@ -36,9 +42,16 @@ export function Inspector({
   const [nonce, setNonce] = useState(0)
 
   return (
-    <aside aria-label="Block inspector" className="flex h-full w-(--aw-inspector) shrink-0 flex-col bg-white">
-      {/* 1:5145 */}
-      <div className={cn(SECTION, "h-[54px] justify-center px-4 py-3")}>
+    <aside
+      aria-label="Block inspector"
+      data-layout={layout}
+      className={cn(
+        "group/insp flex shrink-0 flex-col bg-white",
+        layout === "panel" ? "h-full w-(--aw-inspector)" : "w-full"
+      )}
+    >
+      {/* 1:5145 — the sheet has its own close button instead */}
+      <div className={cn(SECTION, "h-[54px] justify-center px-4 py-3", "group-data-[layout=sheet]/insp:hidden")}>
         <Tooltip>
           <TooltipTrigger
             onClick={onBack}
@@ -126,7 +139,7 @@ function InspectorBody({
               disabled={loading}
               aria-label="Reload block"
               data-raised=""
-              className="aw-btn flex size-[30px] items-center justify-center"
+              className="aw-btn flex size-[30px] items-center justify-center group-data-[layout=sheet]/insp:size-10"
             >
               <Asset src={ASSETS.refreshHeader} w={14} h={14} />
             </TooltipTrigger>
@@ -170,7 +183,13 @@ function InspectorBody({
       </div>
 
       {/* 1:5174 — next step */}
-      <div className={cn(SECTION, "min-h-0 flex-1 gap-4 overflow-y-auto p-4")}>
+      <div
+        className={cn(
+          SECTION,
+          "min-h-0 flex-1 gap-4 overflow-y-auto p-4",
+          "group-data-[layout=sheet]/insp:flex-none group-data-[layout=sheet]/insp:overflow-visible"
+        )}
+      >
         <div className="flex flex-col gap-1.5">
           <p className={cn(TEXT, "text-(--aw-ink)")}>Next step</p>
           <p className={cn(TEXT, "text-(--aw-faint)")}>Add the next block in this workflow</p>
@@ -202,7 +221,7 @@ function InspectorBody({
                           type="button"
                           className={cn(
                             TEXT,
-                            "aw-ghost -mx-1 -my-1 truncate aw-clip-safe rounded-[6px] px-1 py-1 text-(--aw-faint) hover:text-(--aw-ink-2) data-popup-open:text-(--aw-ink-2)"
+                            "aw-ghost aw-hit -mx-1 -my-1 truncate aw-clip-safe rounded-[6px] px-1 py-1 text-(--aw-faint) hover:text-(--aw-ink-2) data-popup-open:text-(--aw-ink-2)"
                           )}
                         >
                           End of workflow · <span className="text-(--aw-teal)">Add step</span>
@@ -225,13 +244,21 @@ function InspectorBody({
       </div>
 
       {/* 1:5194 — actions */}
-      <div className={cn(SECTION, "h-[54px] flex-row items-center gap-2 px-4 py-3")}>
+      <div
+        className={cn(
+          SECTION,
+          "h-[54px] flex-row items-center gap-2 px-4 py-3",
+          // sheet: actions stay pinned while the sheet scrolls
+          "group-data-[layout=sheet]/insp:sticky group-data-[layout=sheet]/insp:bottom-0 group-data-[layout=sheet]/insp:h-auto group-data-[layout=sheet]/insp:shadow-[inset_0_1px_0_var(--aw-line)]"
+        )}
+      >
         <button
           type="button"
           onClick={onRefresh}
           disabled={loading}
           className={cn(
             "aw-btn flex h-[30px] min-w-0 flex-1 items-center justify-center gap-1 p-2",
+            SHEET_BTN,
             TEXT,
             loading ? "text-(--aw-faint)" : "text-(--aw-muted)"
           )}
@@ -246,6 +273,7 @@ function InspectorBody({
           aria-disabled={block.kind === "trigger" || undefined}
           className={cn(
             "aw-btn flex h-[30px] min-w-0 flex-1 items-center justify-center gap-1 p-2 text-(--aw-danger)",
+            SHEET_BTN,
             TEXT,
             "hover:bg-(--aw-danger-soft)! aria-disabled:opacity-50 aria-disabled:hover:bg-white!"
           )}
@@ -272,6 +300,8 @@ function TitleField({ block, onChange }: { block: Block; onChange: (value: strin
       </span>
       <input
         aria-label="Block title"
+        // size=1: no intrinsic width, so the sizer span alone sets the field's width
+        size={1}
         value={block.title}
         placeholder={fallback}
         maxLength={60}

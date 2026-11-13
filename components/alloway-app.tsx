@@ -15,14 +15,24 @@ import {
   type InsertTarget,
 } from "@/lib/workflow"
 import { useHistory } from "@/lib/use-history"
+import { BREAKPOINTS, useMediaQuery } from "@/lib/use-media-query"
+import { cn } from "@/lib/utils"
 import { Sidebar } from "./sidebar"
 import { TopBar, type View } from "./top-bar"
 import { WorkflowCanvas } from "./workflow-canvas"
 import { Inspector } from "./inspector"
 import { RunsView } from "./runs-view"
+import { Sheet } from "./sheet"
 
-/** Alloway workflow editor — Figma "Site Map" (1:516), 1440×1024. */
+/**
+ * Alloway workflow editor — Figma "Site Map" (1:516), 1440×1024.
+ * ≥1024px: docked sidebar + canvas + inspector panel (the Figma layout).
+ * Below: the sidebar is a drawer and the inspector a bottom sheet.
+ */
 export function AllowayApp() {
+  const isDesktop = useMediaQuery(BREAKPOINTS.lg)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const mobileOpen = drawerOpen && !isDesktop
   const [collapsed, setCollapsed] = useState(false)
   // keyboard toggles skip the collapse animation (never animate keyboard actions)
   const [instant, setInstant] = useState(false)
@@ -68,7 +78,12 @@ export function AllowayApp() {
       if (mod && e.key === "\\") {
         e.preventDefault()
         setInstant(true)
-        setCollapsed((c) => !c)
+        if (isDesktop) setCollapsed((c) => !c)
+        else setDrawerOpen((o) => !o)
+        return
+      }
+      if (e.key === "Escape" && mobileOpen) {
+        setDrawerOpen(false)
         return
       }
       const isUndo = mod && e.key.toLowerCase() === "z"
@@ -88,7 +103,7 @@ export function AllowayApp() {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [undo, redo, view])
+  }, [undo, redo, view, isDesktop, mobileOpen])
 
   const deleteBlock = useCallback(
     (id: string) => {
@@ -198,17 +213,50 @@ export function AllowayApp() {
   const blockCount = Object.keys(graph.blocks).length
   const stepCount = useMemo(() => longestPath(graph.blocks, graph.rootId), [graph])
 
+  const sheetOpen = !isDesktop && view === "editor" && showSelection && !!selected
+  const inspector = (layout: "panel" | "sheet") => (
+    <Inspector
+      layout={layout}
+      block={selected}
+      outcomes={outcomes}
+      onBack={() => select(null)}
+      onDescriptionChange={updateDescription}
+      onTitleChange={updateTitle}
+      onTypeChange={changeType}
+      onDelete={deleteBlock}
+      onInsert={insert}
+    />
+  )
+
   return (
-    <div className="alloway flex h-dvh min-h-[640px] w-full overflow-hidden">
+    <div className="alloway flex h-dvh w-full overflow-hidden lg:min-h-[640px]">
       <Sidebar
-        collapsed={collapsed}
+        collapsed={collapsed && isDesktop}
         instant={instant}
+        isDesktop={isDesktop}
+        mobileOpen={mobileOpen}
         onToggle={() => {
           setInstant(false)
           setCollapsed((c) => !c)
         }}
+        onCloseMobile={() => {
+          setInstant(false)
+          setDrawerOpen(false)
+        }}
       />
-      <div className="flex min-w-0 flex-1 flex-col">
+
+      {/* Drawer scrim (below lg only) */}
+      <div
+        aria-hidden
+        onClick={() => setDrawerOpen(false)}
+        className={cn(
+          "fixed inset-0 z-40 bg-(--bg-overlay) transition-opacity duration-300 ease-drawer lg:hidden motion-reduce:transition-none",
+          mobileOpen ? "opacity-100" : "pointer-events-none opacity-0",
+          instant && "transition-none"
+        )}
+      />
+
+      <div inert={mobileOpen} className="flex min-w-0 flex-1 flex-col">
         <TopBar
           name={name}
           onRename={setName}
@@ -216,6 +264,10 @@ export function AllowayApp() {
           onViewChange={setView}
           status={status}
           blockCount={blockCount}
+          onOpenMenu={() => {
+            setInstant(false)
+            setDrawerOpen(true)
+          }}
           onPublish={() => {
             setStatus("live")
             toast.success(`“${name}” is live`, { description: `${blockCount} blocks published.` })
@@ -237,22 +289,28 @@ export function AllowayApp() {
                 freshId={freshId}
                 reveal={reveal}
               />
-              <Inspector
-                block={selected}
-                outcomes={outcomes}
-                onBack={() => select(null)}
-                onDescriptionChange={updateDescription}
-                onTitleChange={updateTitle}
-                onTypeChange={changeType}
-                onDelete={deleteBlock}
-                onInsert={insert}
-              />
+              {/* ≥ lg: the Figma side panel. Hidden by CSS below, so SSR never flashes it on phones. */}
+              <div className="hidden h-full lg:flex">{inspector("panel")}</div>
             </>
           ) : (
             <RunsView name={name} stepCount={stepCount} onOpenEditor={() => setView("editor")} />
           )}
         </main>
       </div>
+
+      {/* < lg: the inspector is a bottom sheet that opens with a selected block */}
+      {!isDesktop ? (
+        <Sheet
+          open={sheetOpen}
+          onOpenChange={(open) => {
+            if (!open) select(null)
+          }}
+          title={selected ? `${selected.title} settings` : "Block settings"}
+          hideTitle
+        >
+          {inspector("sheet")}
+        </Sheet>
+      ) : null}
     </div>
   )
 }
