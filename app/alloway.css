@@ -168,19 +168,37 @@
     justify-content: center;
     flex-shrink: 0;
     overflow: hidden;
-    border: 1px solid #fff;
+    --aw-tile-ring: color-mix(in srgb, var(--aw-tone, var(--aw-teal)) 88%, #000);
+    --aw-tile-stroke: 1px;
     background-color: var(--aw-tone, var(--aw-teal));
+    /* drop shadow + an outer ring a shade darker than the fill */
     box-shadow: 0px 2px 4px 0px rgba(9, 9, 11, 0.16), 0px 1px 2px 0px rgba(9, 9, 11, 0.08),
-      0px 0px 0px 1px var(--aw-tone, var(--aw-teal)), var(--aw-glow);
+      0px 0px 0px 1px var(--aw-tile-ring), var(--aw-glow);
+  }
+  /*
+   * Figma's inner stroke is a gradient, not an opaque white ring: a white
+   * highlight along the top that fades down the sides, slightly dark at the bottom.
+   */
+  .aw-tile::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    padding: var(--aw-tile-stroke);
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 45%, rgba(0, 0, 0, 0) 70%, rgba(0, 0, 0, 0.12));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
   }
   .aw-tile[data-size="xs"] {
-    border-width: 0.5px;
-    box-shadow: 0px 1px 2px 0px rgba(9, 9, 11, 0.08), 0px 0px 0px 0.5px var(--aw-tone, var(--aw-teal)), var(--aw-glow);
+    --aw-tile-stroke: 0.5px;
+    box-shadow: 0px 1px 2px 0px rgba(9, 9, 11, 0.08), 0px 0px 0px 0.5px var(--aw-tile-ring), var(--aw-glow);
   }
   .aw-tile[data-size="xxs"] {
-    border-width: 0.7px;
+    --aw-tile-stroke: 0.7px;
     box-shadow: 0px 1.4px 2.8px 0px rgba(9, 9, 11, 0.16), 0px 0.7px 1.4px 0px rgba(9, 9, 11, 0.08),
-      0px 0px 0px 0.7px var(--aw-tone, var(--aw-teal)), inset 0px 0.7px 14px 0px rgba(255, 255, 255, 0.16);
+      0px 0px 0px 0.7px var(--aw-tile-ring), inset 0px 0.7px 14px 0px rgba(255, 255, 255, 0.16);
   }
 
   /* Block card on the canvas */
