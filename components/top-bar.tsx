@@ -198,7 +198,7 @@ function WorkflowSelector({ name, onRename }: { name: string; onRename: (n: stri
             {name}
           </DropdownMenuItem>
           {RECENT_WORKFLOWS.map((w) => (
-            <DropdownMenuItem key={w} className="pl-7">
+            <DropdownMenuItem key={w} className="pl-[34px]">
               {w}
             </DropdownMenuItem>
           ))}
