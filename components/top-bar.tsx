@@ -63,7 +63,7 @@ export function TopBar({ name, onRename, view, onViewChange, status, blockCount,
           type="button"
           aria-label="Open menu"
           onClick={onOpenMenu}
-          className="aw-btn flex size-10 shrink-0 items-center justify-center lg:hidden"
+          className="aw-btn flex size-9 shrink-0 items-center justify-center lg:hidden"
         >
           <Asset src={ASSETS.menu} w={14} h={14} />
         </button>
@@ -98,7 +98,7 @@ function MoreMenu({
   const live = status === "live"
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger aria-label="Workflow actions" className="aw-btn relative flex size-10 shrink-0 items-center justify-center md:hidden">
+      <DropdownMenuTrigger aria-label="Workflow actions" className="aw-btn relative flex size-9 shrink-0 items-center justify-center md:hidden">
         <EllipsisIcon className="size-4 text-(--aw-muted)" strokeWidth={1.75} />
         {/* unpublished changes */}
         {!live ? <span aria-hidden className="absolute top-2 right-2 size-1.5 rounded-full bg-(--aw-teal)" /> : null}
@@ -146,7 +146,7 @@ function WorkflowSelector({ name, onRename }: { name: string; onRename: (n: stri
 
   if (editing) {
     return (
-      <div className="aw-btn flex h-10 min-w-0 items-center gap-2 p-2 md:h-9 shadow-[0_0_0_1px_var(--aw-teal),0_0_0_4px_rgba(20,179,152,0.12)]">
+      <div className="aw-btn flex h-9 min-w-0 items-center gap-2 p-2 shadow-[0_0_0_1px_var(--aw-teal),0_0_0_4px_rgba(20,179,152,0.12)]">
         <Tile tone="#14b398" size={20} radius={6} glyph={ASSETS.fileTeal12} glyphSize={12} />
         <input
           autoFocus
@@ -169,7 +169,7 @@ function WorkflowSelector({ name, onRename }: { name: string; onRename: (n: stri
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="aw-btn flex h-10 max-w-[280px] min-w-0 items-center gap-2 p-2 md:h-9">
+      <DropdownMenuTrigger className="aw-btn flex h-9 max-w-[280px] min-w-0 items-center gap-2 p-2">
         <Tile tone="#14b398" size={20} radius={6} glyph={ASSETS.fileTeal12} glyphSize={12} />
         <span className="truncate aw-clip-safe text-[14px] leading-none font-medium tracking-[-0.28px] text-(--aw-ink-2)">{name}</span>
         <Asset src={ASSETS.chevronDown} w={14} h={14} />
