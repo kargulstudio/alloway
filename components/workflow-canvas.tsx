@@ -769,6 +769,10 @@ export function WorkflowCanvas({
           willChange: panning ? "transform" : undefined,
         }}
       >
+        {/* routes to moved blocks run under the cards */}
+        {arranged.edges.map((edge) => (
+          <RoutedLines key={`lines-${edge.key}`} edge={edge} />
+        ))}
         {arranged.blocks.map((p) => {
           const block = blocks[p.id]
           const tab = block.kind === "trigger" ? TRIGGER_TAB_H : 0
@@ -841,32 +845,32 @@ export function WorkflowCanvas({
 
 /* ------------------------------------------------------------------- edges */
 
+/**
+ * A moved block's route, drawn *under* the cards so a line that has to pass a
+ * card is hidden behind it (its port dot is drawn on top by <Edge>).
+ */
+function RoutedLines({ edge }: { edge: ArrangedEdge }) {
+  if (edge.kind !== "routed") return null
+  return (
+    <div className="aw-node pointer-events-none">
+      <svg aria-hidden width={1} height={1} overflow="visible" className="absolute top-0 left-0">
+        {edge.paths.map((d, i) => (
+          <path key={i} d={d} stroke="#C4C4C4" strokeWidth={1} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+        ))}
+      </svg>
+      {edge.labels.map((l) => (
+        <BranchLabel key={l.text} label={l.text} style={{ left: l.x, top: l.y, transform: "translate(-50%, -50%)" }} />
+      ))}
+    </div>
+  )
+}
+
 function Edge({ edge, lifted }: { edge: ArrangedEdge; lifted: boolean }) {
   const z = lifted ? 31 : undefined
   if (edge.kind === "routed") {
-    // moved block: orthogonal route(s) with rounded corners, drawn in canvas coordinates
+    // moved block: the line itself is in <RoutedLines> under the cards; only the handle sits on top
     return (
       <div className="aw-node pointer-events-none" style={{ zIndex: z }}>
-        <svg aria-hidden width={1} height={1} overflow="visible" className="absolute top-0 left-0">
-          {edge.paths.map((d, i) => (
-            <path
-              key={i}
-              d={d}
-              stroke="#C4C4C4"
-              strokeWidth={1}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
-            />
-          ))}
-        </svg>
-        {edge.labels.map((l) => (
-          <BranchLabel
-            key={l.text}
-            label={l.text}
-            style={{ left: l.x, top: l.y, transform: "translate(-50%, -50%)" }}
-          />
-        ))}
         <Asset
           src={ASSETS.branchHandle}
           w={14}
