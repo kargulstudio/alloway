@@ -295,7 +295,7 @@ function ShareButton({
         <Asset src={ASSETS.share} w={14} h={14} />
         <span className="text-[14px] leading-none font-medium tracking-[-0.28px] text-(--aw-muted)">Share</span>
       </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={8} className="w-80 gap-3 p-3">
+      <PopoverContent align="end" sideOffset={8} className="w-80 gap-3 p-4">
         <div className="flex flex-col gap-1">
           <PopoverTitle className="text-[14px] text-(--aw-ink)">Share “{name}”</PopoverTitle>
           <PopoverDescription className="text-[13px] leading-snug text-(--aw-muted)">
@@ -356,7 +356,7 @@ function PublishButton({
         <Asset src={ASSETS.play} w={14} h={14} />
         <span className="px-0.5 text-[14px] leading-none font-medium tracking-[-0.28px] text-white">Published</span>
       </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={8} className="w-72 gap-3 p-3">
+      <PopoverContent align="end" sideOffset={8} className="w-72 gap-3 p-4">
         <div className="flex flex-col gap-1">
           <PopoverTitle className="text-[14px] text-(--aw-ink)">
             {upToDate ? "Everything is live" : "Publish changes?"}
