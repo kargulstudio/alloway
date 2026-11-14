@@ -23,8 +23,6 @@ Other scripts: `pnpm build` · `pnpm start` · `pnpm lint`
 
 ## What works
 
-Controls whose feature isn't built say so with a single "… is coming soon" toast (`comingSoon()` in [`lib/prototype.ts`](lib/prototype.ts)); everything else really changes the UI.
-
 ### Editing the workflow
 
 - **Add a step**: hover a connector (or a branch's drop line, or the space under the last block of a branch) and click **+**. The block picker groups steps by category: Conditions (Filter, If/else), Tasks (Create task, Send email), Records (Find records, Find list entries, Update record, Create record) and Utilities (Delay). Inserting mid-flow pushes the rest down; an If/else takes the rest as its "Is true" branch and starts with an empty "Is false" branch showing an **Add step** pill. The inspector's "End of workflow · Add step" opens the same picker
@@ -40,7 +38,7 @@ Controls whose feature isn't built say so with a single "… is coming soon" toa
 ### Canvas and chrome
 
 - **Sidebar** collapses to an icon rail (button or <kbd>⌘\\</kbd>): the rail narrows, the toggle glides from the brand row to a slot under the logo, labels and section headings fade, and collapsed items get tooltips. The keyboard toggle is instant, and reduced motion turns the animation off
-- **Workflow menu**: rename inline; duplicate and other workflows are coming soon
+- **Workflow menu**: rename inline; duplicate and other workflows aren't built
 - **Editor / Runs** segmented toggle; Runs shows a mock run history
 - **Canvas**: click a block to inspect it. Zoom with −/+, <kbd>⌘</kbd>+wheel or <kbd>⌘0</kbd>. Pan by dragging, with the hand tool (<kbd>H</kbd>) or by holding Space. The outline popover jumps to a block, and fit-to-screen is <kbd>⇧1</kbd>
 - **Inspector**: inputs and outcomes load with a short delay, and Refresh re-runs loading
@@ -77,4 +75,3 @@ Controls whose feature isn't built say so with a single "… is coming soon" toa
 | [`lib/data.ts`](lib/data.ts) | Mock workflow, block and trigger catalog, asset paths |
 | [`lib/workflow.ts`](lib/workflow.ts) | Layout from Figma geometry, block offsets and connector routing; insert, edit, type-change, duplicate and delete |
 | [`lib/use-history.ts`](lib/use-history.ts) | Undo/redo history |
-| [`lib/prototype.ts`](lib/prototype.ts) | `comingSoon()` toast for unbuilt features |

@@ -4,7 +4,6 @@ import type { ReactElement, ReactNode } from "react"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ASSETS, FAVORITE_DOCS, FOOTER_NAV, PRIMARY_NAV, TEAMS } from "@/lib/data"
-import { comingSoon } from "@/lib/prototype"
 import { Asset, Tile } from "./asset"
 
 type SidebarProps = {
@@ -30,9 +29,8 @@ const FADE = "transition-opacity duration-(--duration-fast) ease-out-strong grou
  * Below 1024px it's an off-canvas drawer (opened from the top bar) that slides on the drawer curve.
  */
 export function Sidebar({ collapsed, instant, isDesktop, mobileOpen, onToggle, onCloseMobile }: SidebarProps) {
-  // on the drawer, every destination also closes it
-  const go = (feature: string) => {
-    comingSoon(feature)
+  // only the workflow editor exists; on the drawer, every destination just closes it
+  const go = () => {
     if (!isDesktop) onCloseMobile()
   }
 
@@ -128,7 +126,7 @@ export function Sidebar({ collapsed, instant, isDesktop, mobileOpen, onToggle, o
                 key={item.id}
                 label={item.label}
                 collapsed={collapsed}
-                onClick={() => go(item.label)}
+                onClick={go}
                 icon={<Asset src={item.icon} w={14} h={14} />}
               />
             ))}
@@ -141,7 +139,7 @@ export function Sidebar({ collapsed, instant, isDesktop, mobileOpen, onToggle, o
               key={item.id}
               label={item.label}
               collapsed={collapsed}
-              onClick={() => go(item.label)}
+              onClick={go}
               icon={<Asset src={item.icon} w={14} h={14} />}
             />
           ))}
@@ -153,7 +151,7 @@ export function Sidebar({ collapsed, instant, isDesktop, mobileOpen, onToggle, o
               key={item.id}
               label={item.label}
               collapsed={collapsed}
-              onClick={() => go(`${item.label} team`)}
+              onClick={go}
               icon={<Tile tone="#14b398" size={14} radius={4} glyph={item.glyph} glyphSize={8} variant="xs" />}
             />
           ))}
@@ -168,7 +166,7 @@ export function Sidebar({ collapsed, instant, isDesktop, mobileOpen, onToggle, o
             label={item.label}
             collapsed={collapsed}
             gap={8}
-            onClick={() => go(item.label)}
+            onClick={go}
             icon={<Asset src={item.icon} w={14} h={14} />}
           />
         ))}
