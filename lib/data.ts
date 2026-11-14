@@ -9,7 +9,7 @@ const A = "/figma"
 export const ASSETS = {
   logo: `${A}/logo.svg`,
   collapse: `${A}/align-left-01.svg`,
-  menu: `${A}/menu-two-lines.svg`,
+  menu: `${A}/menu.svg`,
   fileTeal12: `${A}/file-05-white-12.svg`,
   fileTeal14: `${A}/file-05-white-14.svg`,
   fileTeal8: `${A}/file-05-white-8.svg`,
