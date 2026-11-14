@@ -65,7 +65,7 @@ export function TopBar({ name, onRename, view, onViewChange, status, blockCount,
           onClick={onOpenMenu}
           className="aw-btn flex size-10 shrink-0 items-center justify-center lg:hidden"
         >
-          <Asset src={ASSETS.collapse} w={14} h={14} className="-scale-x-100" />
+          <Asset src={ASSETS.menu} w={14} h={14} />
         </button>
         <WorkflowSelector name={name} onRename={onRename} />
       </div>
