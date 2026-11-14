@@ -416,7 +416,7 @@ const overlapX = (a: Rect, b: Rect) => a.left < b.right && b.left < a.right
 /**
  * Orthogonal route from a bottom port `s` down into a top port `t`.
  * Below: down, across at `level` (default: halfway), down. Straight when aligned.
- * Above / too close: down out of the source, along a lane between or beside
+ * Above / level with it: down out of the source, along a lane between or beside
  * the two cards, over the target and down into it, so it never crosses them.
  */
 export function orthoRoute(s: Pt, t: Pt, src: Rect, dst: Rect | null, level?: number): Route {
@@ -426,8 +426,10 @@ export function orthoRoute(s: Pt, t: Pt, src: Rect, dst: Rect | null, level?: nu
     const mid = { x: s.x, y: (s.y + t.y) / 2 }
     return { points: [s, { x: s.x, y: t.y }], mid, drop: mid }
   }
-  if (t.y - s.y >= run * 2) {
-    const L = Math.min(t.y - run, Math.max(s.y + run, level ?? (s.y + t.y) / 2))
+  const gap = t.y - s.y
+  // still below (even if close): a simple down–across–down; corners shrink to fit small gaps
+  if (gap >= ROUTE.radius * 1.5) {
+    const L = gap >= run * 2 ? Math.min(t.y - run, Math.max(s.y + run, level ?? (s.y + t.y) / 2)) : (s.y + t.y) / 2
     return {
       points: [s, { x: s.x, y: L }, { x: t.x, y: L }, t],
       mid: { x: (s.x + t.x) / 2, y: L },
